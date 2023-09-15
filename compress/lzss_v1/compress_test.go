@@ -2,12 +2,12 @@ package lzss_v1
 
 import (
 	"fmt"
-	"github.com/consensys/gnark/std/compress"
-	"github.com/consensys/gnark/std/compress/huffman"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strings"
 	"testing"
+	"zk-compress/compress"
+	"zk-compress/compress/huffman"
 )
 
 func testCompressionRoundTrip(t *testing.T, nbBytesAddress uint, d []byte) {

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/consensys/gnark-crypto/utils"
-	"github.com/consensys/gnark/std/compress"
+	"zk-compress/compress"
 )
 
 // The backref logic can produce RLE as a special case, which is good for decompressor state machine complexity
