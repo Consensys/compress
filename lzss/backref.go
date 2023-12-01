@@ -12,9 +12,9 @@ const (
 )
 
 type BackrefType struct {
-	delimiter      byte
+	Delimiter      byte
 	NbBitsAddress  uint8
-	nbBitsLength   uint8
+	NbBitsLength   uint8
 	NbBitsBackRef  uint8
 	nbBytesBackRef int
 	maxAddress     int
@@ -24,9 +24,9 @@ type BackrefType struct {
 
 func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictOnly bool) BackrefType {
 	return BackrefType{
-		delimiter:      symbol,
+		Delimiter:      symbol,
 		NbBitsAddress:  nbBitsAddress,
-		nbBitsLength:   nbBitsLength,
+		NbBitsLength:   nbBitsLength,
 		NbBitsBackRef:  8 + nbBitsAddress + nbBitsLength,
 		nbBytesBackRef: int(8+nbBitsAddress+nbBitsLength+7) / 8,
 		maxAddress:     1 << nbBitsAddress,
@@ -48,8 +48,8 @@ type backref struct {
 }
 
 func (b *backref) writeTo(w *bitio.Writer, i int) {
-	w.TryWriteByte(b.bType.delimiter)
-	w.TryWriteBits(uint64(b.length-1), b.bType.nbBitsLength)
+	w.TryWriteByte(b.bType.Delimiter)
+	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
 	addrToWrite := b.address
 	if !b.bType.dictOnly {
 		addrToWrite = i - b.address - 1
@@ -58,7 +58,7 @@ func (b *backref) writeTo(w *bitio.Writer, i int) {
 }
 
 func (b *backref) readFrom(r *bitio.Reader) {
-	n := r.TryReadBits(b.bType.nbBitsLength)
+	n := r.TryReadBits(b.bType.NbBitsLength)
 	b.length = int(n) + 1
 
 	n = r.TryReadBits(b.bType.NbBitsAddress)
