@@ -1,6 +1,7 @@
 package huffman
 
 import (
+	"fmt"
 	"github.com/consensys/gnark-crypto/utils"
 	"sort"
 )
@@ -124,6 +125,7 @@ func EstimateHuffmanCodeSize(data []byte) int {
 	//fmt.Println("frequencies", frequencies)
 	huffmanTree := createHuffmanTree(frequencies)
 	sizes := huffmanTree.getCodeSizes()
+	fmt.Println("code size for the 0 symbol:", sizes[0])
 	//fmt.Println("sizes", sizes)
 
 	// linear combination

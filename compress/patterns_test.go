@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/consensys/gnark/internal/utils"
+	//"github.com/consensys/gnark/internal/utils"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 	"os"
@@ -110,28 +110,28 @@ func newSubstringsMap(d []byte) *substringMap {
 	fmt.Println("building map")
 	m := substringMap{m: make(map[uint64]substring, len(d)*len(d)/2), data: d}
 	fmt.Println("finding substrings")
-	done := 0
-	utils.Parallelize(len(d), func(start, end int) {
-		for i := start; i < end; i++ {
+	//done := 0
+	//utils.Parallelize(len(d), func(start, end int) {
+	for i := 0; i < len(d); i++ {
 
-			for j := i + 1; j <= len(d) && d[j-1] != 0 && j-i <= 256+substringReferenceSize; j++ { // don't touch substrings with zeros in them
-				// TODO Are we losing opportunities by outlawing longer substrings?
-				if j-i > substringReferenceSize {
-					m.add(i, j)
-				}
+		for j := i + 1; j <= len(d) && d[j-1] != 0 && j-i <= 256+substringReferenceSize; j++ { // don't touch substrings with zeros in them
+			// TODO Are we losing opportunities by outlawing longer substrings?
+			if j-i > substringReferenceSize {
+				m.add(i, j)
 			}
 		}
-		done += end - start
-		fmt.Println(100*done/len(d), "%")
-	})
+	}
+	//done += end - start
+	//fmt.Println(100*done/len(d), "%")
+	//})
 
 	fmt.Println("turning substring data into canonical")
 	k := maps.Keys(m.m)
-	utils.Parallelize(len(d), func(start, end int) {
-		for i := start; i < end; i++ {
-			sort.Ints(m.m[k[i]].starts)
-		}
-	})
+	//utils.Parallelize(len(d), func(start, end int) {
+	for i := 0; i < len(d); i++ {
+		sort.Ints(m.m[k[i]].starts)
+	}
+	//})
 
 	return &m
 }

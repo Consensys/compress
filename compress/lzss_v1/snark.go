@@ -67,7 +67,7 @@ func Decompress(api frontend.API, c []frontend.Variable, d []frontend.Variable, 
 		isEof := api.IsZero(api.Sub(curr, SnarkEofSymbol))
 		brOffset, brLen := readBackRef(backRef[1:])
 
-		copying = api.Mul(copying, api.Sub(1, copyLen01))                       // still copying from previous iterations TODO MulAcc
+		copying = api.MulAcc(copying, api.Neg(copying), copyLen01)              // still copying from previous iterations TODO MulAcc
 		copyI = api.Select(copying, api.Add(copyI, 1), api.Sub(outI, brOffset)) // TODO replace with copyI = outI + brOffset
 		copyLen = api.Select(copying, api.Sub(copyLen, 1), api.Mul(isSymb, brLen))
 		copyLen01 = isBit(copyLen)
