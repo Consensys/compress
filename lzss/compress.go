@@ -43,7 +43,7 @@ const (
 
 // NewCompressor returns a new compressor with the given dictionary
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
-	dict = augmentDict(dict)
+	dict = AugmentDict(dict)
 	if len(dict) > MaxDictSize {
 		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
 	}
@@ -59,15 +59,15 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	return c, nil
 }
 
-func augmentDict(dict []byte) []byte {
+func AugmentDict(dict []byte) []byte {
 	found := uint8(0)
 	const mask uint8 = 0b111
 	for _, b := range dict {
-		if b == symbolDict {
+		if b == SymbolDict {
 			found |= 0b001
-		} else if b == symbolShort {
+		} else if b == SymbolShort {
 			found |= 0b010
-		} else if b == symbolLong {
+		} else if b == SymbolLong {
 			found |= 0b100
 		} else {
 			continue
@@ -77,10 +77,10 @@ func augmentDict(dict []byte) []byte {
 		}
 	}
 
-	return append(dict, symbolDict, symbolShort, symbolLong)
+	return append(dict, SymbolDict, SymbolShort, SymbolLong)
 }
 
-func initBackRefTypes(dictLen int, level Level) (short, long, dict backrefType) {
+func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) {
 	wordAlign := func(a int) uint8 {
 		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
 	}
@@ -89,9 +89,9 @@ func initBackRefTypes(dictLen int, level Level) (short, long, dict backrefType) 
 			return uint8(a)
 		}
 	}
-	short = newBackRefType(symbolShort, wordAlign(14), 8, false)
-	long = newBackRefType(symbolLong, wordAlign(19), 8, false)
-	dict = newBackRefType(symbolDict, wordAlign(bits.Len(uint(dictLen))), 8, true)
+	short = newBackRefType(SymbolShort, wordAlign(14), 8, false)
+	long = newBackRefType(SymbolLong, wordAlign(19), 8, false)
+	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), 8, true)
 	return
 }
 
@@ -117,7 +117,7 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 	// build the index
 	compressor.inputIndex = suffixarray.New(d, compressor.inputSa[:len(d)])
 
-	shortBackRefType, longBackRefType, dictBackRefType := initBackRefTypes(len(compressor.dictData), compressor.level)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
 
 	bDict := backref{bType: dictBackRefType, length: -1, address: -1}
 	bShort := backref{bType: shortBackRefType, length: -1, address: -1}
@@ -229,7 +229,7 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 
 // canEncodeSymbol returns true if the symbol can be encoded directly
 func canEncodeSymbol(b byte) bool {
-	return b != symbolDict && b != symbolShort && b != symbolLong
+	return b != SymbolDict && b != SymbolShort && b != SymbolLong
 }
 
 func (compressor *Compressor) writeByte(b byte) {
@@ -242,7 +242,7 @@ func (compressor *Compressor) writeByte(b byte) {
 // findBackRef attempts to find a backref in the window [i-brAddressRange, i+brLengthRange]
 // if no backref is found, it returns -1, -1
 // else returns the address and length of the backref
-func (compressor *Compressor) findBackRef(data []byte, i int, bType backrefType, minLength int) (addr, length int) {
+func (compressor *Compressor) findBackRef(data []byte, i int, bType BackrefType, minLength int) (addr, length int) {
 	if minLength == -1 {
 		minLength = bType.nbBytesBackRef
 	}

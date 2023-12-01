@@ -25,8 +25,8 @@ func DecompressGo(data, dict []byte) (d []byte, err error) {
 		return data[2:], nil
 	}
 
-	dict = augmentDict(dict)
-	shortBackRefType, longBackRefType, dictBackRefType := initBackRefTypes(len(dict), settings.level)
+	dict = AugmentDict(dict)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), settings.level)
 
 	bDict := backref{bType: dictBackRefType}
 	bShort := backref{bType: shortBackRefType}
@@ -37,19 +37,19 @@ func DecompressGo(data, dict []byte) (d []byte, err error) {
 	s := in.TryReadByte()
 	for in.TryError == nil {
 		switch s {
-		case symbolShort:
+		case SymbolShort:
 			// short back ref
 			bShort.readFrom(in)
 			for i := 0; i < bShort.length; i++ {
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
-		case symbolLong:
+		case SymbolLong:
 			// long back ref
 			bLong.readFrom(in)
 			for i := 0; i < bLong.length; i++ {
 				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
 			}
-		case symbolDict:
+		case SymbolDict:
 			// dict back ref
 			bDict.readFrom(in)
 			out.Write(dict[bDict.address : bDict.address+bDict.length])
@@ -74,12 +74,12 @@ func ReadIntoStream(data, dict []byte, level Level) (zk_compress.Stream, error) 
 	// now find out how much of the stream is padded zeros and remove them
 	byteReader := bytes.NewReader(data)
 	in := bitio.NewReader(byteReader)
-	dict = augmentDict(dict)
+	dict = AugmentDict(dict)
 	var settings settings
 	if err := settings.readFrom(byteReader); err != nil {
 		return out, err
 	}
-	shortBackRefType, longBackRefType, dictBackRefType := initBackRefTypes(len(dict), level)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), level)
 
 	// the main job of this function is to compute the right value for outLenBits
 	// so we can remove the extra zeros at the end of out
@@ -93,20 +93,20 @@ func ReadIntoStream(data, dict []byte, level Level) (zk_compress.Stream, error) 
 
 	s := in.TryReadByte()
 	for in.TryError == nil {
-		var b *backrefType
+		var b *BackrefType
 		switch s {
-		case symbolShort:
+		case SymbolShort:
 			b = &shortBackRefType
-		case symbolLong:
+		case SymbolLong:
 			b = &longBackRefType
-		case symbolDict:
+		case SymbolDict:
 			b = &dictBackRefType
 		}
 		if b == nil {
 			outLenBits += 8
 		} else {
-			in.TryReadBits(b.nbBitsBackRef - 8)
-			outLenBits += int(b.nbBitsBackRef)
+			in.TryReadBits(b.NbBitsBackRef - 8)
+			outLenBits += int(b.NbBitsBackRef)
 		}
 		s = in.TryReadByte()
 	}
