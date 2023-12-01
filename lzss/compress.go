@@ -6,8 +6,8 @@ import (
 	"io"
 	"math/bits"
 
+	"github.com/consensys/compress/lzss/internal/suffixarray"
 	"github.com/icza/bitio"
-	"zk-compress/lzss/internal/suffixarray"
 )
 
 type Compressor struct {
@@ -33,12 +33,12 @@ const (
 	// will impose a high number of constraints on the SNARK decompressor
 	BestCompression Level = 1
 
-	GoodCompression        = 2
-	GoodSnarkDecompression = 4
+	GoodCompression        Level = 2
+	GoodSnarkDecompression Level = 4
 
-	// BestSnarkDecomposition forces the compressor to produce byte-aligned output.
+	// BestSnarkDecompression forces the compressor to produce byte-aligned output.
 	// It is convenient and efficient for the SNARK decompressor but can hurt the compression ratio significantly
-	BestSnarkDecompression = 8
+	BestSnarkDecompression Level = 8
 )
 
 // NewCompressor returns a new compressor with the given dictionary
