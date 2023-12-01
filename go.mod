@@ -1,4 +1,4 @@
-module zk-compress
+module compress
 
 go 1.19
 

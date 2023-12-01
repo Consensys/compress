@@ -1,4 +1,4 @@
-package zk_compress
+package compress
 
 import (
 	"math/rand"
