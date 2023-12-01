@@ -1,13 +1,14 @@
-module zk-compress
+module compress
 
 go 1.19
 
 require (
-	github.com/consensys/accelerated-crypto-monorepo v0.0.0-20230217093628-425c8a089f54
-	github.com/consensys/gnark v0.8.1
-	github.com/consensys/gnark-crypto v0.12.1
+	github.com/icza/bitio v1.1.0
+	github.com/stretchr/testify v1.8.4
 )
 
-replace github.com/consensys/accelerated-crypto-monorepo => /Users/arya/projects-go/accelerated-crypto-monorepo
-
-replace github.com/consensys/gnark => /Users/arya/gnark // logderivlookup not released yet
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
