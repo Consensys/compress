@@ -1,4 +1,4 @@
-module compress
+module github.com/consensys/compress
 
 go 1.19
 
