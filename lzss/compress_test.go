@@ -67,10 +67,10 @@ func Test8ZerosAfterNonzero(t *testing.T) { // probably won't happen in our call
 func FuzzCompress(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input, dict []byte, cMode uint8) {
-		if len(input) > maxInputSize {
+		if len(input) > MaxInputSize {
 			t.Skip("input too large")
 		}
-		if len(dict) > maxDictSize {
+		if len(dict) > MaxDictSize {
 			t.Skip("dict too large")
 		}
 		var level Level

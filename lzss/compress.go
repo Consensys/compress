@@ -15,11 +15,11 @@ type Compressor struct {
 	bw  *bitio.Writer
 
 	inputIndex *suffixarray.Index
-	inputSa    [maxInputSize]int32 // suffix array space.
+	inputSa    [MaxInputSize]int32 // suffix array space.
 
 	dictData  []byte
 	dictIndex *suffixarray.Index
-	dictSa    [maxDictSize]int32 // suffix array space.
+	dictSa    [MaxDictSize]int32 // suffix array space.
 
 	level Level
 }
@@ -44,13 +44,13 @@ const (
 // NewCompressor returns a new compressor with the given dictionary
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	dict = augmentDict(dict)
-	if len(dict) > maxDictSize {
-		return nil, fmt.Errorf("dict size must be <= %d", maxDictSize)
+	if len(dict) > MaxDictSize {
+		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
 	}
 	c := &Compressor{
 		dictData: dict,
 	}
-	c.buf.Grow(maxInputSize)
+	c.buf.Grow(MaxInputSize)
 	if level != NoCompression {
 		// if we don't compress we don't need the dict.
 		c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
@@ -98,8 +98,8 @@ func initBackRefTypes(dictLen int, level Level) (short, long, dict backrefType) 
 // Compress compresses the given data
 func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 	// check input size
-	if len(d) > maxInputSize {
-		return nil, fmt.Errorf("input size must be <= %d", maxInputSize)
+	if len(d) > MaxInputSize {
+		return nil, fmt.Errorf("input size must be <= %d", MaxInputSize)
 	}
 
 	// reset output buffer

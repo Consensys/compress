@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	maxInputSize = 1 << 21 // 2Mb
-	maxDictSize  = 1 << 22 // 4Mb
+	MaxInputSize = 1 << 21 // 2Mb
+	MaxDictSize  = 1 << 22 // 4Mb
 )
 
 type backrefType struct {
