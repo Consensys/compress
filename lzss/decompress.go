@@ -3,9 +3,9 @@ package lzss
 import (
 	"bytes"
 	"errors"
+	"github.com/consensys/compress"
 	"github.com/icza/bitio"
 	"io"
-	zk_compress "zk-compress"
 )
 
 func DecompressGo(data, dict []byte) (d []byte, err error) {
@@ -64,9 +64,9 @@ func DecompressGo(data, dict []byte) (d []byte, err error) {
 
 // ReadIntoStream reads the compressed data into a stream
 // the stream is not padded with zeros as one obtained by a naive call to compress.NewStream may be
-func ReadIntoStream(data, dict []byte, level Level) (zk_compress.Stream, error) {
+func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
 
-	out, err := zk_compress.NewStream(data, uint8(level))
+	out, err := compress.NewStream(data, uint8(level))
 	if err != nil {
 		return out, err
 	}
@@ -114,7 +114,7 @@ func ReadIntoStream(data, dict []byte, level Level) (zk_compress.Stream, error) 
 		return out, in.TryError
 	}
 
-	return zk_compress.Stream{
+	return compress.Stream{
 		D:       out.D[:outLenBits/int(level)],
 		NbSymbs: out.NbSymbs,
 	}, nil
