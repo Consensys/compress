@@ -59,6 +59,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	return c, nil
 }
 
+// AugmentDict ensures the dictionary contains the special symbols
 func AugmentDict(dict []byte) []byte {
 	found := uint8(0)
 	const mask uint8 = 0b111
