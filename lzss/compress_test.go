@@ -88,6 +88,7 @@ func FuzzCompress(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Fatal("test fuzz failed")
 		compressedBytes, err := compressor.Compress(input)
 		if err != nil {
 			t.Fatal(err)
