@@ -38,8 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions: 
       pull-requests: write
-    outputs:
-      failures: ${{ steps.generate-job-summary.outputs.failures }}
     steps:
     - name: checkout code
       uses: actions/checkout@v4
@@ -59,19 +57,12 @@ jobs:
     - name: Run tests
       run: |
         set -euo pipefail
-        go test -json -v -p 4 -timeout=30m ./... 2>&1 | gotestfmt | tee /tmp/gotest.log
+        go test -json -v -p 4 -timeout=30m ./... 2>&1 | gotestfmt
+        go test -json -v -run=NONE -fuzz=Compress -fuzztime=2s -timeout=30m ./lzss 2>&1 | gotestfmt 
 
-    - name: Generate job summary
-      id: generate-job-summary
-      if: ${{ always() }}
-      run: |
-        cat /tmp/gotest.log > $GITHUB_STEP_SUMMARY
-
-  fuzz-test:
-      name: Fuzz test
-      runs-on: ubuntu-latest
-      steps:
-        - uses: jidicula/go-fuzz-action@v1.1.0
-          with:
-            packages: './...'
-            fuzz-time: 5s
+    - name: Upload testdata
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: testdata
+        path: ./lzss/testdata
