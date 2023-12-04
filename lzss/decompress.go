@@ -3,13 +3,17 @@ package lzss
 import (
 	"bytes"
 	"errors"
+	"io"
+
 	"github.com/consensys/compress"
 	"github.com/icza/bitio"
-	"io"
 )
 
-func DecompressGo(data, dict []byte) (d []byte, err error) {
-	// d[i < 0] = Settings.BackRefSettings.Symbol by convention
+// Decompress decompresses the given data using the given dictionary
+// the dictionary must be the same as the one used to compress the data
+// Note that this is not a fail-safe decompressor, it will fail ungracefully if the data
+// has a different format than the one expected
+func Decompress(data, dict []byte) (d []byte, err error) {
 	var out bytes.Buffer
 	out.Grow(len(data)*6 + len(dict))
 	in := bitio.NewReader(bytes.NewReader(data))
@@ -72,11 +76,10 @@ func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
 	}
 
 	// now find out how much of the stream is padded zeros and remove them
-	byteReader := bytes.NewReader(data)
-	in := bitio.NewReader(byteReader)
+	in := bitio.NewReader(bytes.NewReader(data))
 	dict = AugmentDict(dict)
 	var settings settings
-	if err := settings.readFrom(byteReader); err != nil {
+	if err := settings.readFrom(in); err != nil {
 		return out, err
 	}
 	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), level)

@@ -58,11 +58,11 @@ jobs:
       run: |
         set -euo pipefail
         go test -json -v -p 4 -timeout=30m ./... 2>&1 | gotestfmt
-        go test -json -v -run=NONE -fuzz=Compress -fuzztime=2s -timeout=30m ./lzss 2>&1 | gotestfmt 
+        go test -json -v -run=NONE -fuzz=Compress -fuzztime=30s ./lzss 2>&1 | gotestfmt 
 
     - name: Upload testdata
       if: failure()
       uses: actions/upload-artifact@v3
       with:
         name: testdata
-        path: ./lzss/testdata
+        path: ./lzss/testdata/fuzz
