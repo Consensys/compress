@@ -47,6 +47,8 @@ type backref struct {
 	bType   BackrefType
 }
 
+// Warning; writeTo and readFrom are not symmetrical
+
 func (b *backref) writeTo(w *bitio.Writer, i int) {
 	w.TryWriteByte(b.bType.Delimiter)
 	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)

@@ -38,7 +38,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	bLong := backref{bType: longBackRefType}
 
 	var out bytes.Buffer
-	out.Grow(len(data)*6 + len(dict))
+	out.Grow(len(data) * 7)
 
 	// read byte per byte; if it's a backref, write the corresponding bytes
 	// otherwise, write the byte as is
