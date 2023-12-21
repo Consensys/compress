@@ -3,7 +3,6 @@ package lzss
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"math/bits"
 
 	"github.com/consensys/compress/lzss/internal/suffixarray"
@@ -41,6 +40,10 @@ const (
 	BestSnarkDecompression Level = 8
 )
 
+const (
+	bitLen = 16 // TODO @Tabaie document
+)
+
 // NewCompressor returns a new compressor with the given dictionary
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	dict = AugmentDict(dict)
@@ -61,6 +64,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 
 // AugmentDict ensures the dictionary contains the special symbols
 func AugmentDict(dict []byte) []byte {
+
 	found := uint8(0)
 	const mask uint8 = 0b111
 	for _, b := range dict {
@@ -96,8 +100,11 @@ func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) 
 	return
 }
 
-// Compress compresses the given data
-func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
+// Compress compresses the given data; if hint is provided, the compressor will try to use it
+// hint should be a subset of the data compressed by the same compressor
+// For example, calling Compress([]byte{1, 2, 3, 4, 5}, compressed([]byte{1, 2, 3})) will
+// result in much faster compression than calling Compress([]byte{1, 2, 3, 4, 5})
+func (compressor *Compressor) Compress(d []byte, hints ...[]byte) (c []byte, err error) {
 	// check input size
 	if len(d) > MaxInputSize {
 		return nil, fmt.Errorf("input size must be <= %d", MaxInputSize)
@@ -105,20 +112,32 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 
 	// reset output buffer
 	compressor.buf.Reset()
-	settings := settings{version: 0, level: compressor.level}
-	if err = settings.writeTo(&compressor.buf); err != nil {
+
+	// write header
+	header := Header{Version: Version, Level: compressor.level}
+	if _, err = header.WriteTo(&compressor.buf); err != nil {
 		return
 	}
+
+	// write uncompressed data if compression is disabled
 	if compressor.level == NoCompression {
 		compressor.buf.Write(d)
 		return compressor.buf.Bytes(), nil
 	}
+
+	// initialize bit writer & backref types
 	compressor.bw = bitio.NewWriter(&compressor.buf)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
+
+	startI := 0
+	if len(hints) == 1 {
+		// try to compress from the hint to save time (no need to look for optimal backrefs
+		// if we already have a good enough hint)
+		startI = compressor.compressFromHint(header, d, hints[0])
+	}
 
 	// build the index
 	compressor.inputIndex = suffixarray.New(d, compressor.inputSa[:len(d)])
-
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
 
 	bDict := backref{bType: dictBackRefType, length: -1, address: -1}
 	bShort := backref{bType: shortBackRefType, length: -1, address: -1}
@@ -140,7 +159,7 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 		return bLong, bLong.savings()
 	}
 
-	for i := 0; i < len(d); {
+	for i := startI; i < len(d); {
 		if !canEncodeSymbol(d[i]) {
 			// we must find a backref.
 			if !fillBackrefs(i, 1) {
@@ -163,15 +182,15 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 		if i+1 < len(d) {
 			if fillBackrefs(i+1, bestAtI.length+1) {
 				if newBest, newSavings := bestBackref(); newSavings > bestSavings {
-					// we found an even better backref
+					// we found a better backref at i+1
 					compressor.writeByte(d[i])
 					i++
 
-					// then emit the backref at i+1
+					// then mark backref to be written at i+1
 					bestSavings = newSavings
 					bestAtI = newBest
 
-					// can we find an even better backref?
+					// can we find an even better backref at i+2 ?
 					if canEncodeSymbol(d[i]) && i+1 < len(d) {
 						if fillBackrefs(i+1, bestAtI.length+1) {
 							// we found an even better backref
@@ -179,7 +198,6 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 								compressor.writeByte(d[i])
 								i++
 
-								// bestSavings = newSavings
 								bestAtI = newBest
 							}
 						}
@@ -198,7 +216,6 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 
 						// then emit the backref at i+2
 						bestAtI = newBest
-						// bestSavings = newSavings
 					}
 				}
 			}
@@ -215,17 +232,111 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 		return nil, err
 	}
 
-	if compressor.buf.Len() >= len(d)+settings.bitLen()/8 {
+	if compressor.buf.Len() >= len(d)+bitLen/8 {
 		// compression was not worth it
 		compressor.buf.Reset()
-		settings.level = NoCompression
-		if err = settings.writeTo(&compressor.buf); err != nil {
+		header.Level = NoCompression
+		if _, err = header.WriteTo(&compressor.buf); err != nil {
 			return
 		}
 		_, err = compressor.buf.Write(d)
 	}
 
 	return compressor.buf.Bytes(), err
+}
+
+// compressFromHint attempts to compress the data using the hint
+// and returns the number of bytes written to the buffer
+// it essentially runs the decompress algorithm and checks that the backrefs are usable.
+func (compressor *Compressor) compressFromHint(header Header, input, hint []byte) (startI int) {
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
+
+	bDict := backref{bType: dictBackRefType}
+	bShort := backref{bType: shortBackRefType}
+	bLong := backref{bType: longBackRefType}
+
+	in := bitio.NewReader(bytes.NewReader(hint))
+
+	var hintHeader Header
+	if _, err := hintHeader.ReadFrom(in); err != nil {
+		return
+	}
+	if hintHeader.Version != header.Version || hintHeader.Level != header.Level {
+		// hint is not usable.
+		return
+	}
+	if hintHeader.Level == NoCompression {
+		return
+	}
+
+	// read byte per byte; if it's a backref, write the corresponding bytes
+	// otherwise, write the byte as is
+	s := in.TryReadByte()
+	var out bytes.Buffer
+	out.Grow(len(input))
+	for in.TryError == nil {
+		switch s {
+		case SymbolShort:
+			// short back ref
+			bShort.readFrom(in)
+			nad := out.Len() - bShort.address
+			for i := 0; i < bShort.length; i++ {
+				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
+			}
+			decompressed := out.Bytes()[startI : startI+bShort.length]
+			if !bytes.Equal(decompressed, input[startI:startI+bShort.length]) {
+				// this is not a good backref; escape.
+				return
+			}
+			// emit the backref
+			bShort.address = nad
+			bShort.writeTo(compressor.bw, startI)
+			startI += bShort.length
+		case SymbolLong:
+			// long back ref
+			bLong.readFrom(in)
+			nad := out.Len() - bLong.address
+			for i := 0; i < bLong.length; i++ {
+				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
+			}
+			// compare the last bLong.length bytes of out with d
+			decompressed := out.Bytes()[startI : startI+bLong.length]
+			if !bytes.Equal(decompressed, input[startI:startI+bLong.length]) {
+				// this is not a good backref; escape.
+				return
+			}
+			// emit the backref
+			bLong.address = nad
+
+			bLong.writeTo(compressor.bw, startI)
+			startI += bLong.length
+		case SymbolDict:
+			// dict back ref
+			bDict.readFrom(in)
+			// compare the dict slice with d at the same position
+			if !bytes.Equal(compressor.dictData[bDict.address:bDict.address+bDict.length], input[startI:startI+bDict.length]) {
+				// this is not a good backref; escape.
+				return
+			}
+			// emit the backref
+			bDict.writeTo(compressor.bw, startI)
+			startI += bDict.length
+
+			// write on out for future refs.
+			out.Write(compressor.dictData[bDict.address : bDict.address+bDict.length])
+
+		default:
+			if s != input[startI] {
+				return
+			}
+			compressor.writeByte(input[startI])
+			startI++
+			out.WriteByte(s)
+		}
+		s = in.TryReadByte()
+	}
+
+	return
 }
 
 // canEncodeSymbol returns true if the symbol can be encoded directly
@@ -275,30 +386,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-type settings struct {
-	version byte
-	level   Level
-}
-
-func (s *settings) writeTo(w io.Writer) error {
-	_, err := w.Write([]byte{s.version, byte(s.level)}) // 0 -> compressor release version
-	return err
-}
-
-func (s *settings) readFrom(r io.ByteReader) (err error) {
-	if s.version, err = r.ReadByte(); err != nil {
-		return
-	}
-	if level, err := r.ReadByte(); err != nil {
-		return err
-	} else {
-		s.level = Level(level)
-	}
-	return
-}
-
-func (s *settings) bitLen() int {
-	return 16
 }

@@ -14,30 +14,34 @@ import (
 // Note that this is not a fail-safe decompressor, it will fail ungracefully if the data
 // has a different format than the one expected
 func Decompress(data, dict []byte) (d []byte, err error) {
-	var out bytes.Buffer
-	out.Grow(len(data)*6 + len(dict))
 	in := bitio.NewReader(bytes.NewReader(data))
 
-	var settings settings
-	if err = settings.readFrom(in); err != nil {
+	// parse header
+	var header Header
+	sizeHeader, err := header.ReadFrom(in)
+	if err != nil {
 		return
 	}
-	if settings.version != 0 {
+	if header.Version != Version {
 		return nil, errors.New("unsupported compressor version")
 	}
-	if settings.level == NoCompression {
-		return data[2:], nil
+	if header.Level == NoCompression {
+		return data[sizeHeader:], nil
 	}
 
+	// init dict and backref types
 	dict = AugmentDict(dict)
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), settings.level)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
 
 	bDict := backref{bType: dictBackRefType}
 	bShort := backref{bType: shortBackRefType}
 	bLong := backref{bType: longBackRefType}
 
-	// read until startAt and write bytes as is
+	var out bytes.Buffer
+	out.Grow(len(data) * 7)
 
+	// read byte per byte; if it's a backref, write the corresponding bytes
+	// otherwise, write the byte as is
 	s := in.TryReadByte()
 	for in.TryError == nil {
 		switch s {
@@ -78,19 +82,19 @@ func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
 	// now find out how much of the stream is padded zeros and remove them
 	in := bitio.NewReader(bytes.NewReader(data))
 	dict = AugmentDict(dict)
-	var settings settings
-	if err := settings.readFrom(in); err != nil {
+	var header Header
+	if _, err := header.ReadFrom(in); err != nil {
 		return out, err
 	}
 	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), level)
 
 	// the main job of this function is to compute the right value for outLenBits
 	// so we can remove the extra zeros at the end of out
-	outLenBits := settings.bitLen()
-	if settings.level == NoCompression {
+	outLenBits := bitLen
+	if header.Level == NoCompression {
 		return out, nil
 	}
-	if settings.level != level {
+	if header.Level != level {
 		return out, errors.New("compression mode mismatch")
 	}
 
