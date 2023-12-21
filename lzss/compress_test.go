@@ -165,7 +165,21 @@ func BenchmarkAverageBatch(b *testing.B) {
 	// benchmark lzss
 	b.Run("lzss", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := compresslzss_v1(compressor, data)
+			_, err := compressor.Compress(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	hint, err := compressor.Compress(data[:len(data)/2])
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.Run("lzss_with_hint", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := compressor.Compress(data, hint)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -203,4 +217,65 @@ func getDictionary() []byte {
 		panic(err)
 	}
 	return d
+}
+
+func TestCompressWithHint(t *testing.T) {
+	assert := require.New(t)
+
+	dict := getDictionary()
+
+	compressor, err := NewCompressor(dict, BestCompression)
+	assert.NoError(err)
+
+	// Since compress.Compress returns a pointer to the buffer, we need to copy it
+	compressAndCopy := func(data []byte, opt ...[]byte) ([]byte, error) {
+		var compressed []byte
+		if len(opt) == 0 {
+			compressed, err = compressor.Compress(data)
+		} else {
+			compressed, err = compressor.Compress(data, opt[0])
+		}
+		if err != nil {
+			return nil, err
+		}
+		return append([]byte{}, compressed...), nil
+	}
+
+	// get a reference input.
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(err)
+	data, err := hex.DecodeString(string(d))
+	assert.NoError(err)
+
+	// compress half of it
+	halfCompressedRef, err := compressAndCopy(data[:len(data)/2])
+	assert.NoError(err)
+	tmp, err := Decompress(halfCompressedRef, dict)
+	assert.NoError(err)
+	assert.True(bytes.Equal(data[:len(data)/2], tmp))
+
+	// compress again with hint; we should get the same result
+	halfCompressedWithHint, err := compressAndCopy(data[:len(data)/2], halfCompressedRef)
+	assert.NoError(err)
+
+	tmp, err = Decompress(halfCompressedWithHint, dict)
+	assert.NoError(err)
+	assert.True(bytes.Equal(data[:len(data)/2], tmp))
+
+	assert.True(bytes.Equal(halfCompressedRef, halfCompressedWithHint))
+
+	// compress the full input
+	fullCompressedRef, err := compressAndCopy(data)
+	assert.NoError(err)
+
+	// compress again with hint using half the compressed result; we should get the same result
+	fullCompressedWithHint, err := compressAndCopy(data, halfCompressedWithHint)
+	assert.NoError(err)
+
+	decompressedFull, err := Decompress(fullCompressedRef, dict)
+	assert.NoError(err)
+
+	decompressedFullHint, err := Decompress(fullCompressedWithHint, dict)
+	assert.NoError(err)
+	assert.Equal(decompressedFullHint, decompressedFull)
 }

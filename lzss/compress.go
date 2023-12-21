@@ -97,7 +97,7 @@ func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) 
 }
 
 // Compress compresses the given data
-func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
+func (compressor *Compressor) Compress(d []byte, hintCompressed ...[]byte) (c []byte, err error) {
 	// check input size
 	if len(d) > MaxInputSize {
 		return nil, fmt.Errorf("input size must be <= %d", MaxInputSize)
@@ -105,8 +105,8 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 
 	// reset output buffer
 	compressor.buf.Reset()
-	settings := settings{version: 0, level: compressor.level}
-	if err = settings.writeTo(&compressor.buf); err != nil {
+	header := settings{version: 0, level: compressor.level}
+	if err = header.writeTo(&compressor.buf); err != nil {
 		return
 	}
 	if compressor.level == NoCompression {
@@ -119,6 +119,96 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 	compressor.inputIndex = suffixarray.New(d, compressor.inputSa[:len(d)])
 
 	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
+
+	startI := 0
+	if len(hintCompressed) == 1 {
+		bDict := backref{bType: dictBackRefType}
+		bShort := backref{bType: shortBackRefType}
+		bLong := backref{bType: longBackRefType}
+		// we have a hint; let's try to use it
+		in := bitio.NewReader(bytes.NewReader(hintCompressed[0]))
+
+		var hintHeader settings
+		if err = hintHeader.readFrom(in); err != nil {
+			return
+		}
+		if hintHeader.version != header.version || hintHeader.level != header.level {
+			// hint is bogus.
+			goto noHint
+		}
+		if hintHeader.level == NoCompression {
+			goto noHint
+		}
+
+		// we decompress the hint and use it as a starting point until
+		// bytes mismatch.
+		s := in.TryReadByte()
+		var out bytes.Buffer
+		out.Grow(len(d))
+		for in.TryError == nil {
+			switch s {
+			case SymbolShort:
+				// short back ref
+				bShort.readFrom(in)
+				nad := out.Len() - bShort.address
+				for i := 0; i < bShort.length; i++ {
+					out.WriteByte(out.Bytes()[out.Len()-bShort.address])
+				}
+				decompressed := out.Bytes()[startI : startI+bShort.length]
+				if !bytes.Equal(decompressed, d[startI:startI+bShort.length]) {
+					// this is not a good backref; escape.
+					goto noHint
+				}
+				// emit the backref
+				bShort.address = nad
+				bShort.writeTo(compressor.bw, startI)
+				startI += bShort.length
+			case SymbolLong:
+				// long back ref
+				bLong.readFrom(in)
+				nad := out.Len() - bLong.address
+				for i := 0; i < bLong.length; i++ {
+					out.WriteByte(out.Bytes()[out.Len()-bLong.address])
+				}
+				// compare the last bLong.length bytes of out with d
+				decompressed := out.Bytes()[startI : startI+bLong.length]
+				if !bytes.Equal(decompressed, d[startI:startI+bLong.length]) {
+					// this is not a good backref; escape.
+					goto noHint
+				}
+				// emit the backref
+				bLong.address = nad
+
+				bLong.writeTo(compressor.bw, startI)
+				startI += bLong.length
+			case SymbolDict:
+				// dict back ref
+				bDict.readFrom(in)
+				// compare the dict slice with d at the same position
+				if !bytes.Equal(compressor.dictData[bDict.address:bDict.address+bDict.length], d[startI:startI+bDict.length]) {
+					// this is not a good backref; escape.
+					goto noHint
+				}
+				// emit the backref
+				bDict.writeTo(compressor.bw, startI)
+				startI += bDict.length
+
+				// write on out for future refs.
+				out.Write(compressor.dictData[bDict.address : bDict.address+bDict.length])
+
+			default:
+				if s != d[startI] {
+					goto noHint
+				}
+				compressor.writeByte(d[startI])
+				startI++
+				out.WriteByte(s)
+			}
+			s = in.TryReadByte()
+		}
+
+	}
+noHint:
 
 	bDict := backref{bType: dictBackRefType, length: -1, address: -1}
 	bShort := backref{bType: shortBackRefType, length: -1, address: -1}
@@ -140,7 +230,7 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 		return bLong, bLong.savings()
 	}
 
-	for i := 0; i < len(d); {
+	for i := startI; i < len(d); {
 		if !canEncodeSymbol(d[i]) {
 			// we must find a backref.
 			if !fillBackrefs(i, 1) {
@@ -215,11 +305,11 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 		return nil, err
 	}
 
-	if compressor.buf.Len() >= len(d)+settings.bitLen()/8 {
+	if compressor.buf.Len() >= len(d)+header.bitLen()/8 {
 		// compression was not worth it
 		compressor.buf.Reset()
-		settings.level = NoCompression
-		if err = settings.writeTo(&compressor.buf); err != nil {
+		header.level = NoCompression
+		if err = header.writeTo(&compressor.buf); err != nil {
 			return
 		}
 		_, err = compressor.buf.Write(d)
