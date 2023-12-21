@@ -3,7 +3,6 @@ package lzss
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"math/bits"
 
 	"github.com/consensys/compress/lzss/internal/suffixarray"
@@ -39,6 +38,10 @@ const (
 	// BestSnarkDecompression forces the compressor to produce byte-aligned output.
 	// It is convenient and efficient for the SNARK decompressor but can hurt the compression ratio significantly
 	BestSnarkDecompression Level = 8
+)
+
+const (
+	bitLen = 16 // TODO @Tabaie document
 )
 
 // NewCompressor returns a new compressor with the given dictionary
@@ -105,14 +108,19 @@ func (compressor *Compressor) Compress(d []byte, hintCompressed ...[]byte) (c []
 
 	// reset output buffer
 	compressor.buf.Reset()
-	header := settings{version: 0, level: compressor.level}
-	if err = header.writeTo(&compressor.buf); err != nil {
+
+	// write header
+	header := Header{Version: Version, Level: compressor.level}
+	if _, err = header.WriteTo(&compressor.buf); err != nil {
 		return
 	}
+
+	// write uncompressed data if compression is disabled
 	if compressor.level == NoCompression {
 		compressor.buf.Write(d)
 		return compressor.buf.Bytes(), nil
 	}
+
 	compressor.bw = bitio.NewWriter(&compressor.buf)
 
 	// build the index
@@ -128,15 +136,15 @@ func (compressor *Compressor) Compress(d []byte, hintCompressed ...[]byte) (c []
 		// we have a hint; let's try to use it
 		in := bitio.NewReader(bytes.NewReader(hintCompressed[0]))
 
-		var hintHeader settings
-		if err = hintHeader.readFrom(in); err != nil {
+		var hintHeader Header
+		if _, err = hintHeader.ReadFrom(in); err != nil {
 			return
 		}
-		if hintHeader.version != header.version || hintHeader.level != header.level {
+		if hintHeader.Version != header.Version || hintHeader.Level != header.Level {
 			// hint is bogus.
 			goto noHint
 		}
-		if hintHeader.level == NoCompression {
+		if hintHeader.Level == NoCompression {
 			goto noHint
 		}
 
@@ -305,11 +313,11 @@ noHint:
 		return nil, err
 	}
 
-	if compressor.buf.Len() >= len(d)+header.bitLen()/8 {
+	if compressor.buf.Len() >= len(d)+bitLen/8 {
 		// compression was not worth it
 		compressor.buf.Reset()
-		header.level = NoCompression
-		if err = header.writeTo(&compressor.buf); err != nil {
+		header.Level = NoCompression
+		if _, err = header.WriteTo(&compressor.buf); err != nil {
 			return
 		}
 		_, err = compressor.buf.Write(d)
@@ -365,30 +373,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-type settings struct {
-	version byte
-	level   Level
-}
-
-func (s *settings) writeTo(w io.Writer) error {
-	_, err := w.Write([]byte{s.version, byte(s.level)}) // 0 -> compressor release version
-	return err
-}
-
-func (s *settings) readFrom(r io.ByteReader) (err error) {
-	if s.version, err = r.ReadByte(); err != nil {
-		return
-	}
-	if level, err := r.ReadByte(); err != nil {
-		return err
-	} else {
-		s.level = Level(level)
-	}
-	return
-}
-
-func (s *settings) bitLen() int {
-	return 16
 }
