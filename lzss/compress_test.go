@@ -105,6 +105,43 @@ func FuzzCompress(f *testing.F) {
 			t.Log("dict", hex.EncodeToString(dict))
 			t.Fatal("decompressed bytes are not equal to original bytes")
 		}
+
+		// recompress with a hint.
+		if len(compressedBytes) > 0 {
+			c := make([]byte, len(compressedBytes))
+			copy(c, compressedBytes)
+			compressedBytes2, err := compressor.Compress(input, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(c, compressedBytes2) {
+				t.Fatal("recompressed bytes are not equal to original compressed bytes")
+			}
+
+			if len(input) < MaxInputSize/2 {
+				// let's reverse the input and use a hint
+				input2 := make([]byte, len(input))
+				for i := range input {
+					input2[i] = input[len(input)-1-i]
+				}
+				newInput := make([]byte, len(input)*2)
+				copy(newInput, input)
+				copy(newInput[len(input):], input2)
+				compressedBytes3, err := compressor.Compress(newInput, c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// decompress and check result
+				decompressedBytes3, err := Decompress(compressedBytes3, dict)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(newInput, decompressedBytes3) {
+					t.Fatal("decompressed bytes are not equal to original bytes")
+				}
+			}
+		}
+
 	})
 }
 
