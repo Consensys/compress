@@ -12,7 +12,6 @@ func TestHeaderRoundTrip(t *testing.T) {
 	h := Header{
 		Version: Version,
 		Level:   BestCompression,
-		Extra:   []byte("extra data"),
 	}
 
 	var buf bytes.Buffer
