@@ -41,7 +41,7 @@ const (
 )
 
 const (
-	bitLen = 16 // TODO @Tabaie document
+	headerBitLen = 24
 )
 
 // NewCompressor returns a new compressor with the given dictionary
@@ -232,7 +232,7 @@ func (compressor *Compressor) Compress(d []byte, hints ...[]byte) (c []byte, err
 		return nil, err
 	}
 
-	if compressor.buf.Len() >= len(d)+bitLen/8 {
+	if compressor.buf.Len() >= len(d)+headerBitLen/8 {
 		// compression was not worth it
 		compressor.buf.Reset()
 		header.Level = NoCompression
