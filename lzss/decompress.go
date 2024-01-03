@@ -90,7 +90,7 @@ func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
 
 	// the main job of this function is to compute the right value for outLenBits
 	// so we can remove the extra zeros at the end of out
-	outLenBits := bitLen
+	outLenBits := headerBitLen
 	if header.Level == NoCompression {
 		return out, nil
 	}
