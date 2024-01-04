@@ -153,6 +153,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return bLong, bLong.savings()
 	}
 
+	n, d = len(d), compressor.inBuf.Bytes()
 	for i := compressor.lastInLen; i < len(d); {
 		if !canEncodeSymbol(d[i]) {
 			// we must find a backref.
@@ -219,12 +220,11 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		i += bestAtI.length
 	}
 
-	if compressor.bw.TryError != nil {
-		return len(d), compressor.bw.TryError
+	if err = compressor.bw.TryError; err != nil {
+		return
 	}
 
 	compressor.lastNbSkippedBits, err = compressor.bw.Align()
-
 	return
 }
 
