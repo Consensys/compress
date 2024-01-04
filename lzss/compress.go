@@ -20,8 +20,6 @@ type Compressor struct {
 	lastNbSkippedBits uint8
 	lastInLen         int
 
-	wordNbBits uint8
-
 	inputIndex *suffixarray.Index
 	inputSa    [MaxInputSize]int32 // suffix array space.
 
@@ -29,7 +27,8 @@ type Compressor struct {
 	dictIndex *suffixarray.Index
 	dictSa    [MaxDictSize]int32 // suffix array space.
 
-	level Level
+	level         Level
+	intendedLevel Level
 }
 
 type Level uint8
@@ -69,11 +68,9 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	if level != NoCompression {
 		// if we don't compress we don't need the dict.
 		c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
-		c.wordNbBits = uint8(level)
-	} else {
-		c.wordNbBits = 8
 	}
 	c.level = level
+	c.intendedLevel = level
 	return c, nil
 }
 
@@ -238,6 +235,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 }
 
 func (compressor *Compressor) Reset() {
+	compressor.level = compressor.intendedLevel
 	compressor.outBuf.Truncate(headerBitLen / 8)
 	compressor.inBuf.Reset()
 	compressor.lastOutLen = 0
@@ -307,13 +305,18 @@ func (compressor *Compressor) Bytes() []byte {
 func (compressor *Compressor) Stream() compress.Stream {
 	compressor.considerBypassing()
 
-	res, err := compress.NewStream(compressor.outBuf.Bytes(), compressor.wordNbBits)
+	wordNbBits := uint8(compressor.level)
+	if wordNbBits == 0 {
+		wordNbBits = 8
+	}
+
+	res, err := compress.NewStream(compressor.outBuf.Bytes(), wordNbBits)
 	if err != nil {
 		panic(err)
 	}
 
 	return compress.Stream{
-		D:       res.D[:(res.Len()-int(compressor.lastNbSkippedBits))/int(compressor.wordNbBits)],
+		D:       res.D[:(res.Len()-int(compressor.lastNbSkippedBits))/int(wordNbBits)],
 		NbSymbs: res.NbSymbs,
 	}
 }
