@@ -72,6 +72,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 
 // ReadIntoStream reads the compressed data into a stream
 // the stream is not padded with zeros as one obtained by a naive call to compress.NewStream may be
+// Deprecated: use Compressor.Stream() instead
 func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
 
 	out, err := compress.NewStream(data, uint8(level))
