@@ -119,6 +119,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return 0, fmt.Errorf("input size must be <= %d", MaxInputSize)
 	}
 
+	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.appendInput(d)
 
 	// write uncompressed data if compression is disabled
@@ -245,6 +246,7 @@ func (compressor *Compressor) Reset() {
 }
 
 func (compressor *Compressor) Len() int {
+	compressor.considerBypassing()
 	return compressor.outBuf.Len()
 }
 

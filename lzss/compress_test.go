@@ -205,3 +205,52 @@ func getDictionary() []byte {
 	}
 	return d
 }
+
+func TestRevert(t *testing.T) {
+	assert := require.New(t)
+
+	// read the file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(err)
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	assert.NoError(err)
+
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, BestCompression)
+	assert.NoError(err)
+
+	const (
+		inChunkSize = 100000
+		outMaxSize  = 20000
+	)
+
+	for i0 := 0; i0 < len(data); {
+		i := i0
+		for ; i < len(data) && compressor.Len() <= outMaxSize; i += inChunkSize {
+			_, err = compressor.Write(data[i:min(i+inChunkSize, len(data))])
+			assert.NoError(err)
+		}
+
+		if compressor.Len() > outMaxSize {
+			assert.NoError(compressor.Revert())
+			i -= inChunkSize
+		}
+
+		c := compressor.Bytes()
+		dBack, err := Decompress(c, dict)
+		assert.NoError(err)
+		assert.Equal(data[i0:i], dBack)
+
+		compressor.Reset()
+		i0 = i
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
