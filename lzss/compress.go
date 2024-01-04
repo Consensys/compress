@@ -69,8 +69,8 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 		// if we don't compress we don't need the dict.
 		c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
 	}
-	c.level = level
 	c.intendedLevel = level
+	c.Reset()
 	return c, nil
 }
 
@@ -117,12 +117,6 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	// check input size
 	if len(d) > MaxInputSize {
 		return 0, fmt.Errorf("input size must be <= %d", MaxInputSize)
-	}
-
-	// write header TODO @tabaie Not every time
-	header := Header{Version: Version, Level: compressor.level}
-	if _, err = header.WriteTo(&compressor.outBuf); err != nil {
-		return
 	}
 
 	compressor.appendInput(d)
@@ -236,25 +230,22 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 
 func (compressor *Compressor) Reset() {
 	compressor.level = compressor.intendedLevel
-	compressor.outBuf.Truncate(headerBitLen / 8)
+	compressor.outBuf.Reset()
+	header := Header{
+		Version: Version,
+		Level:   compressor.level,
+	}
+	if _, err := header.WriteTo(&compressor.outBuf); err != nil {
+		panic(err)
+	}
 	compressor.inBuf.Reset()
-	compressor.lastOutLen = 0
+	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.lastNbSkippedBits = 0
 	compressor.lastInLen = 0
 }
 
 func (compressor *Compressor) Len() int {
 	return compressor.outBuf.Len()
-}
-
-func (compressor *Compressor) writeLastUnalignedBits() error {
-	lastOutByte := compressor.outBuf.Bytes()[compressor.lastOutLen]
-	compressor.outBuf.Truncate(compressor.outBuf.Len() - 1)
-	lastOutByte >>= compressor.lastNbSkippedBits
-	if err := compressor.bw.WriteBits(uint64(lastOutByte), 8-compressor.lastNbSkippedBits); err != nil {
-		return err
-	}
-	return compressor.bw.Close()
 }
 
 // Revert undoes the last call to Write
@@ -266,13 +257,13 @@ func (compressor *Compressor) Revert() error {
 	compressor.inBuf.Truncate(compressor.lastInLen)
 	compressor.lastInLen = -1
 
-	if compressor.lastOutLen == 0 {
-		compressor.Reset()
-		return nil
-	} else {
-		compressor.outBuf.Truncate(compressor.lastOutLen)
-		return compressor.writeLastUnalignedBits()
+	lastOutByte := compressor.outBuf.Bytes()[compressor.lastOutLen]
+	compressor.outBuf.Truncate(compressor.lastOutLen - 1)
+	lastOutByte >>= compressor.lastNbSkippedBits
+	if err := compressor.bw.WriteBits(uint64(lastOutByte), 8-compressor.lastNbSkippedBits); err != nil {
+		return err
 	}
+	return compressor.bw.Close()
 }
 
 func (compressor *Compressor) considerBypassing() {
@@ -326,6 +317,7 @@ func (compressor *Compressor) Stream() compress.Stream {
 // For example, calling Compress([]byte{1, 2, 3, 4, 5}, compressed([]byte{1, 2, 3})) will
 // result in much faster compression than calling Compress([]byte{1, 2, 3, 4, 5})
 func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
+	compressor.Reset()
 	_, err = compressor.Write(d)
 	return compressor.Bytes(), err
 }
