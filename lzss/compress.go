@@ -270,14 +270,6 @@ func (compressor *Compressor) Revert() error {
 	compressor.inBuf.Truncate(compressor.lastInLen)
 	compressor.lastInLen = -1
 
-	/*lastOutByte := compressor.outBuf.Bytes()[compressor.lastOutLen-1]
-	compressor.outBuf.Truncate(compressor.lastOutLen - 1)
-	lastOutByte >>= compressor.lastNbSkippedBits
-	if err := compressor.bw.WriteBits(uint64(lastOutByte), 8-compressor.lastNbSkippedBits); err != nil {
-		return err
-	}
-	return compressor.bw.Close()*/
-
 	compressor.outBuf.Truncate(compressor.lastOutLen)
 	compressor.nbSkippedBits = compressor.lastNbSkippedBits
 	return nil
