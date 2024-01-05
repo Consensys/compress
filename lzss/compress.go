@@ -51,7 +51,6 @@ const (
 )
 
 const (
-	headerBitLen        = 24
 	longBrAddressNbBits = 19
 )
 

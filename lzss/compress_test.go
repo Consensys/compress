@@ -320,7 +320,7 @@ func TestRevert(t *testing.T) {
 		for ; i < len(data) && compressor.Len() < outMaxSize; i += inChunkSize {
 			_, err = compressor.Write(data[i:min(i+inChunkSize, len(data))])
 			assert.NoError(err)
-			if uncompressedSize := i + inChunkSize - i0 + 3; compressor.Len() >= outMaxSize &&
+			if uncompressedSize := i + inChunkSize - i0 + headerBitLen/8; compressor.Len() >= outMaxSize &&
 				uncompressedSize <= outMaxSize &&
 				compressor.Len() > uncompressedSize {
 				assert.True(compressor.ConsiderBypassing())
