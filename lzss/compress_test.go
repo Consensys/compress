@@ -222,14 +222,14 @@ func TestRevert(t *testing.T) {
 	assert.NoError(err)
 
 	const (
-		inChunkSize = 4
-		outMaxSize  = 12
+		inChunkSize = 1000
+		outMaxSize  = 5000
 	)
 
 	for i0 := 0; i0 < len(data); {
 		dHereon := data[i0:]
 		_ = dHereon
-		if i0 == 8 {
+		if i0 == 626514 {
 			fmt.Println("i0:", i0)
 		}
 
@@ -252,10 +252,66 @@ func TestRevert(t *testing.T) {
 		c := compressor.Bytes()
 		dBack, err := Decompress(c, dict)
 		assert.NoError(err)
-		assert.Equal(data[i0:i], dBack, i0)
+		assert.Equal(data[i0:min(i, len(data))], dBack, i0)
 
 		compressor.Reset()
 		i0 = i
+	}
+}
+
+func TestFindFailure(t *testing.T) {
+	//t.Parallel()
+
+	assert := require.New(t)
+
+	// read the file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(err)
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	assert.NoError(err)
+
+	dict := getDictionary()
+
+	for inChunkSize := 4; inChunkSize <= 50; inChunkSize++ {
+		for outMaxSize := inChunkSize * 2; outMaxSize <= inChunkSize*5; outMaxSize++ {
+
+			compressor, err := NewCompressor(dict, BestCompression)
+			assert.NoError(err)
+
+			for i0 := 0; i0 < len(data); {
+				/*dHereon := data[i0:]
+				_ = dHereon
+				if i0 == 626450 {
+					fmt.Println("i0:", i0)
+				}*/
+
+				i := i0
+				for ; i < len(data) && compressor.Len() < outMaxSize; i += inChunkSize {
+					_, err = compressor.Write(data[i:min(i+inChunkSize, len(data))])
+					assert.NoError(err)
+					if uncompressedSize := i + inChunkSize - i0 + 3; compressor.Len() >= outMaxSize &&
+						uncompressedSize <= outMaxSize &&
+						compressor.Len() > uncompressedSize {
+						assert.True(compressor.ConsiderBypassing())
+					}
+				}
+
+				if compressor.Len() > outMaxSize {
+					assert.NoError(compressor.Revert())
+					i -= inChunkSize
+				}
+
+				c := compressor.Bytes()
+				dBack, err := Decompress(c, dict)
+				assert.NoError(err)
+				assert.Equal(data[i0:min(i, len(data))], dBack, "%d -> %d @ %d", inChunkSize, outMaxSize, i0)
+
+				compressor.Reset()
+				i0 = i
+			}
+		}
 	}
 }
 
