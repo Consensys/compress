@@ -117,10 +117,6 @@ func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) 
 
 // The compressor cannot recover from a Write error. It must be Reset before writing again
 func (compressor *Compressor) Write(d []byte) (n int, err error) {
-	// check input size
-	if len(d) > MaxInputSize {
-		return 0, fmt.Errorf("input size must be <= %d", MaxInputSize)
-	}
 
 	// reconstruct bit writer cache
 	compressor.lastOutLen = compressor.outBuf.Len()
@@ -132,7 +128,9 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	compressor.lastNbSkippedBits = compressor.nbSkippedBits
-	compressor.appendInput(d)
+	if err = compressor.appendInput(d); err != nil {
+		return
+	}
 
 	// write uncompressed data if compression is disabled
 	if compressor.level == NoCompression {
@@ -277,6 +275,7 @@ func (compressor *Compressor) Revert() error {
 	return nil
 }
 
+// ConsiderBypassing switches to NoCompression if we get significant expansion instead of compression
 func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 
 	if compressor.outBuf.Len() > compressor.inBuf.Len()+headerBitLen/8 {
@@ -379,7 +378,11 @@ func max(a, b int) int {
 	return b
 }
 
-func (compressor *Compressor) appendInput(d []byte) {
+func (compressor *Compressor) appendInput(d []byte) error {
+	if compressor.inBuf.Len()+len(d) > MaxInputSize {
+		return fmt.Errorf("input size must be <= %d", MaxInputSize)
+	}
 	compressor.lastInLen = compressor.inBuf.Len()
 	compressor.inBuf.Write(d)
+	return nil
 }
