@@ -106,42 +106,6 @@ func FuzzCompress(f *testing.F) {
 			t.Fatal("decompressed bytes are not equal to original bytes")
 		}
 
-		// recompress with a hint.
-		if len(compressedBytes) > 0 {
-			c := make([]byte, len(compressedBytes))
-			copy(c, compressedBytes)
-			compressedBytes2, err := compressor.Compress(input, c)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(c, compressedBytes2) {
-				t.Fatal("recompressed bytes are not equal to original compressed bytes")
-			}
-
-			if len(input) < MaxInputSize/2 {
-				// let's reverse the input and use a hint
-				input2 := make([]byte, len(input))
-				for i := range input {
-					input2[i] = input[len(input)-1-i]
-				}
-				newInput := make([]byte, len(input)*2)
-				copy(newInput, input)
-				copy(newInput[len(input):], input2)
-				compressedBytes3, err := compressor.Compress(newInput, c)
-				if err != nil {
-					t.Fatal(err)
-				}
-				// decompress and check result
-				decompressedBytes3, err := Decompress(compressedBytes3, dict)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !bytes.Equal(newInput, decompressedBytes3) {
-					t.Fatal("decompressed bytes are not equal to original bytes")
-				}
-			}
-		}
-
 	})
 }
 
@@ -208,20 +172,6 @@ func BenchmarkAverageBatch(b *testing.B) {
 			}
 		}
 	})
-
-	hint, err := compressor.Compress(data[:len(data)/2])
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.Run("lzss_with_hint", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, err := compressor.Compress(data, hint)
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }
 
 type compressResult struct {
@@ -256,63 +206,57 @@ func getDictionary() []byte {
 	return d
 }
 
-func TestCompressWithHint(t *testing.T) {
+func TestRevert(t *testing.T) {
 	assert := require.New(t)
 
-	dict := getDictionary()
-
-	compressor, err := NewCompressor(dict, BestCompression)
-	assert.NoError(err)
-
-	// Since compress.Compress returns a pointer to the buffer, we need to copy it
-	compressAndCopy := func(data []byte, opt ...[]byte) ([]byte, error) {
-		var compressed []byte
-		if len(opt) == 0 {
-			compressed, err = compressor.Compress(data)
-		} else {
-			compressed, err = compressor.Compress(data, opt[0])
-		}
-		if err != nil {
-			return nil, err
-		}
-		return append([]byte{}, compressed...), nil
-	}
-
-	// get a reference input.
+	// read the file
 	d, err := os.ReadFile("./testdata/average_block.hex")
 	assert.NoError(err)
+
+	// convert to bytes
 	data, err := hex.DecodeString(string(d))
 	assert.NoError(err)
 
-	// compress half of it
-	halfCompressedRef, err := compressAndCopy(data[:len(data)/2])
-	assert.NoError(err)
-	tmp, err := Decompress(halfCompressedRef, dict)
-	assert.NoError(err)
-	assert.True(bytes.Equal(data[:len(data)/2], tmp))
-
-	// compress again with hint; we should get the same result
-	halfCompressedWithHint, err := compressAndCopy(data[:len(data)/2], halfCompressedRef)
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, BestCompression)
 	assert.NoError(err)
 
-	tmp, err = Decompress(halfCompressedWithHint, dict)
-	assert.NoError(err)
-	assert.True(bytes.Equal(data[:len(data)/2], tmp))
+	const (
+		inChunkSize = 1000
+		outMaxSize  = 5000
+	)
 
-	assert.True(bytes.Equal(halfCompressedRef, halfCompressedWithHint))
+	for i0 := 0; i0 < len(data); {
 
-	// compress the full input
-	fullCompressedRef, err := compressAndCopy(data)
-	assert.NoError(err)
+		i := i0
+		for ; i < len(data) && compressor.Len() < outMaxSize; i += inChunkSize {
+			_, err = compressor.Write(data[i:min(i+inChunkSize, len(data))])
+			assert.NoError(err)
+			if uncompressedSize := i + inChunkSize - i0 + 3; compressor.Len() >= outMaxSize &&
+				uncompressedSize <= outMaxSize &&
+				compressor.Len() > uncompressedSize {
+				assert.True(compressor.ConsiderBypassing())
+			}
+		}
 
-	// compress again with hint using half the compressed result; we should get the same result
-	fullCompressedWithHint, err := compressAndCopy(data, halfCompressedWithHint)
-	assert.NoError(err)
+		if compressor.Len() > outMaxSize {
+			assert.NoError(compressor.Revert())
+			i -= inChunkSize
+		}
 
-	decompressedFull, err := Decompress(fullCompressedRef, dict)
-	assert.NoError(err)
+		c := compressor.Bytes()
+		dBack, err := Decompress(c, dict)
+		assert.NoError(err)
+		assert.Equal(data[i0:min(i, len(data))], dBack, i0)
 
-	decompressedFullHint, err := Decompress(fullCompressedWithHint, dict)
-	assert.NoError(err)
-	assert.Equal(decompressedFullHint, decompressedFull)
+		compressor.Reset()
+		i0 = i
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
