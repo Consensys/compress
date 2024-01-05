@@ -223,7 +223,7 @@ func TestRevert(t *testing.T) {
 
 	const (
 		inChunkSize = 4
-		outMaxSize  = 11
+		outMaxSize  = 12
 	)
 
 	for i0 := 0; i0 < len(data); {
