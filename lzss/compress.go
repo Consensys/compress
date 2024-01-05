@@ -121,6 +121,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	// reconstruct bit writer cache
+	compressor.lastOutLen = compressor.outBuf.Len()
 	lastByte := compressor.outBuf.Bytes()[compressor.outBuf.Len()-1]
 	compressor.outBuf.Truncate(compressor.outBuf.Len() - 1)
 	lastByte >>= compressor.nbSkippedBits
@@ -129,7 +130,6 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	compressor.lastNbSkippedBits = compressor.nbSkippedBits
-	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.appendInput(d)
 
 	// write uncompressed data if compression is disabled
