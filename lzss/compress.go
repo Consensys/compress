@@ -55,6 +55,8 @@ const (
 )
 
 // NewCompressor returns a new compressor with the given dictionary
+// The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
+// The level determines the bit alignment of the compressed data. The "higher" the level, the better the compression ratio but the more constraints on the decompressor.
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	dict = AugmentDict(dict)
 	if len(dict) > MaxDictSize {
