@@ -348,3 +348,62 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+func TestCraftExpandingInput(t *testing.T) {
+	dict := getDictionary()
+	d := craftExpandingInput(dict, 100000)
+	compressor, err := NewCompressor(dict, BestCompression)
+	require.NoError(t, err)
+	c, err := compressor.Compress(d)
+	require.NoError(t, err)
+	require.Greater(t, 10*len(c)/len(d), 12)
+}
+
+func craftExpandingInput(dict []byte, size int) []byte {
+	_, _, dRefType := InitBackRefTypes(len(dict), BestCompression)
+	nbBytesExpandingBlock := dRefType.nbBytesBackRef
+
+	bytesToNum := func(b []byte) uint64 {
+		var res uint64
+		for i := range b {
+			res += uint64(b[i]) << uint64(i*8)
+		}
+		return res
+	}
+
+	fillNum := func(dst []byte, n uint64) {
+		for i := range dst {
+			dst[i] = byte(n)
+			n >>= 8
+		}
+	}
+
+	covered := make(map[uint64]struct{})
+	for i := range dict {
+		if dict[i] == 255 {
+			covered[bytesToNum(dict[i+1:i+nbBytesExpandingBlock])] = struct{}{}
+		}
+	}
+	isCovered := func(n uint64) bool {
+		_, ok := covered[n]
+		return ok
+	}
+
+	res := make([]byte, size)
+	var blockCtr uint64
+	for i := 0; i < len(res); i += nbBytesExpandingBlock {
+		for isCovered(blockCtr) {
+			blockCtr++
+			if blockCtr == 0 {
+				panic("overflow")
+			}
+		}
+		res[i] = 255
+		fillNum(res[i+1:i+nbBytesExpandingBlock], blockCtr)
+		blockCtr++
+		if blockCtr == 0 {
+			panic("overflow")
+		}
+	}
+	return res
+}
