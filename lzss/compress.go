@@ -3,8 +3,9 @@ package lzss
 import (
 	"bytes"
 	"fmt"
-	"github.com/consensys/compress"
 	"math/bits"
+
+	"github.com/consensys/compress"
 
 	"github.com/consensys/compress/lzss/internal/suffixarray"
 	"github.com/icza/bitio"
@@ -257,8 +258,14 @@ func (compressor *Compressor) Reset() {
 	compressor.lastInLen = 0
 }
 
+// Len returns the number of bytes compressed so far (includes the header)
 func (compressor *Compressor) Len() int {
 	return compressor.outBuf.Len()
+}
+
+// Written returns the number of bytes written to the compressor
+func (compressor *Compressor) Written() int {
+	return compressor.inBuf.Len()
 }
 
 // Revert undoes the last call to Write
