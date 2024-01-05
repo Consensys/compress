@@ -356,13 +356,14 @@ func TestCraftExpandingInput(t *testing.T) {
 	require.NoError(t, err)
 	c, err := compressor.Compress(d)
 	require.NoError(t, err)
-	require.Greater(t, 10*len(c)/len(d), 12)
+	require.Greater(t, 10*len(c)/len(d), 12) // 1.2⁻¹ : a very disappointing compression ratio
 }
 
 func craftExpandingInput(dict []byte, size int) []byte {
 	_, _, dRefType := InitBackRefTypes(len(dict), BestCompression)
 	nbBytesExpandingBlock := dRefType.nbBytesBackRef
 
+	// the following two methods convert between a byte slice and a number; just for convenient use as map keys and counters
 	bytesToNum := func(b []byte) uint64 {
 		var res uint64
 		for i := range b {
@@ -378,7 +379,7 @@ func craftExpandingInput(dict []byte, size int) []byte {
 		}
 	}
 
-	covered := make(map[uint64]struct{})
+	covered := make(map[uint64]struct{}) // combinations present in the dictionary, to avoid
 	for i := range dict {
 		if dict[i] == 255 {
 			covered[bytesToNum(dict[i+1:i+nbBytesExpandingBlock])] = struct{}{}
