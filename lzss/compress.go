@@ -11,8 +11,9 @@ import (
 )
 
 type Compressor struct {
-	outBuf bytes.Buffer
-	bw     *bitio.Writer // invariant: bw cache must always be empty
+	outBuf        bytes.Buffer
+	bw            *bitio.Writer // invariant: bw cache must always be empty
+	nbSkippedBits uint8
 
 	inBuf bytes.Buffer
 
@@ -119,6 +120,15 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return 0, fmt.Errorf("input size must be <= %d", MaxInputSize)
 	}
 
+	// reconstruct bit writer cache
+	lastByte := compressor.outBuf.Bytes()[compressor.outBuf.Len()-1]
+	compressor.outBuf.Truncate(compressor.outBuf.Len() - 1)
+	lastByte >>= compressor.nbSkippedBits
+	if err = compressor.bw.WriteBits(uint64(lastByte), 8-compressor.nbSkippedBits); err != nil {
+		return
+	}
+
+	compressor.lastNbSkippedBits = compressor.nbSkippedBits
 	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.appendInput(d)
 
@@ -173,7 +183,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 			i++
 			continue
 		}
-		bestAtI, bestSavings := bestBackref()
+		bestAtI, bestSavings := bestBackref() // todo @tabaie measure savings in bits not bytes
 
 		if i+1 < len(d) {
 			if fillBackrefs(i+1, bestAtI.length+1) {
@@ -225,7 +235,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return
 	}
 
-	compressor.lastNbSkippedBits, err = compressor.bw.Align()
+	compressor.nbSkippedBits, err = compressor.bw.Align()
 	return
 }
 
@@ -242,6 +252,7 @@ func (compressor *Compressor) Reset() {
 	compressor.inBuf.Reset()
 	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.lastNbSkippedBits = 0
+	compressor.nbSkippedBits = 0
 	compressor.lastInLen = 0
 }
 
@@ -259,7 +270,7 @@ func (compressor *Compressor) Revert() error {
 	compressor.inBuf.Truncate(compressor.lastInLen)
 	compressor.lastInLen = -1
 
-	lastOutByte := compressor.outBuf.Bytes()[compressor.lastOutLen]
+	lastOutByte := compressor.outBuf.Bytes()[compressor.lastOutLen-1]
 	compressor.outBuf.Truncate(compressor.lastOutLen - 1)
 	lastOutByte >>= compressor.lastNbSkippedBits
 	if err := compressor.bw.WriteBits(uint64(lastOutByte), 8-compressor.lastNbSkippedBits); err != nil {
@@ -273,7 +284,8 @@ func (compressor *Compressor) considerBypassing() {
 	if compressor.outBuf.Len() > compressor.inBuf.Len()+headerBitLen/8 {
 		// compression was not worth it
 		compressor.level = NoCompression
-		compressor.lastNbSkippedBits = 0
+		compressor.nbSkippedBits = 0
+		compressor.lastInLen = -1 // cannot revert
 		compressor.outBuf.Reset()
 		header := Header{Version: Version, Level: NoCompression}
 		if _, err := header.WriteTo(&compressor.outBuf); err != nil {
