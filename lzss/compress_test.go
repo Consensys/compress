@@ -84,6 +84,22 @@ func FuzzCompress(f *testing.F) {
 			level = BestCompression
 		}
 
+		checkDecompressResult := func(compressedBytes []byte) {
+			decompressedBytes, err := Decompress(compressedBytes, dict)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !bytes.Equal(input, decompressedBytes) {
+				t.Log("compression level:", level)
+				t.Log("original bytes:", hex.EncodeToString(input))
+				t.Log("decompressed bytes:", hex.EncodeToString(decompressedBytes))
+				t.Log("dict", hex.EncodeToString(dict))
+				t.Fatal("decompressed bytes are not equal to original bytes")
+			}
+		}
+
+		// test compress (i.e write all the bytes)
 		compressor, err := NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
@@ -93,17 +109,89 @@ func FuzzCompress(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		decompressedBytes, err := Decompress(compressedBytes, dict)
+		checkDecompressResult(compressedBytes)
+
+		// test write byte by byte
+		compressor, err = NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, b := range input {
+			if _, err := compressor.Write([]byte{b}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		checkDecompressResult(compressor.Bytes())
 
-		if !bytes.Equal(input, decompressedBytes) {
-			t.Log("compression level:", level)
-			t.Log("original bytes:", hex.EncodeToString(input))
-			t.Log("decompressed bytes:", hex.EncodeToString(decompressedBytes))
-			t.Log("dict", hex.EncodeToString(dict))
-			t.Fatal("decompressed bytes are not equal to original bytes")
+		// test write byte by byte with revert
+		compressor, err = NewCompressor(dict, level)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range input {
+			if _, err := compressor.Write([]byte{b}); err != nil {
+				t.Fatal(err)
+			}
+			if err := compressor.Revert(); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// compressor.Bytes() should be empty.
+		// TODO: fix this right now it's probably the header.
+		// if len(compressor.Bytes()) != 0 {
+		// 	t.Fatal("Bytes() should be empty after revert")
+		// }
+
+		// test write byte by byte with revert and write again
+		compressor, err = NewCompressor(dict, level)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range input {
+			if _, err := compressor.Write([]byte{b}); err != nil {
+				t.Fatal(err)
+			}
+			if err := compressor.Revert(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := compressor.Write([]byte{b}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		checkDecompressResult(compressor.Bytes())
+
+		// Write after Reset should be the same as Write after NewCompressor
+		compressor.Reset()
+
+		if _, err := compressor.Write(input); err != nil {
+			t.Fatal(err)
+		}
+		checkDecompressResult(compressor.Bytes())
+
+		if len(input) > 1 {
+			compressor.Reset()
+
+			// write all but the last byte
+			if _, err := compressor.Write(input[:len(input)-1]); err != nil {
+				t.Fatal(err)
+			}
+			// write the last byte
+			if _, err := compressor.Write([]byte{input[len(input)-1]}); err != nil {
+				t.Fatal(err)
+			}
+			checkDecompressResult(compressor.Bytes())
+
+			compressor.Reset()
+			// write the first byte
+			if _, err := compressor.Write([]byte{input[0]}); err != nil {
+				t.Fatal(err)
+			}
+			// write the rest
+			if _, err := compressor.Write(input[1:]); err != nil {
+				t.Fatal(err)
+			}
+			checkDecompressResult(compressor.Bytes())
 		}
 
 	})
