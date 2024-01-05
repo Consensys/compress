@@ -14,6 +14,7 @@ The `Compressor` class in the `lzss` package does all the work.
 ```go
 d := []byte("hello world, hello wordl")
 compressor, _ := lzss.NewCompressor(nil, lzss.BestCompression)
+c, _ := compressor.Compress(d)
 dBack, _ := Decompress(c, nil)
 if !bytes.Equal(d, dBack) {
     panic("decompression failed")
