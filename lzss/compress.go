@@ -138,6 +138,8 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return len(d), nil
 	}
 
+	n, d = len(d), compressor.inBuf.Bytes()
+
 	// initialize bit writer & backref types
 	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
 
@@ -164,7 +166,6 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return bLong, bLong.savings()
 	}
 
-	n, d = len(d), compressor.inBuf.Bytes()
 	for i := compressor.lastInLen; i < len(d); {
 		if !canEncodeSymbol(d[i]) {
 			// we must find a backref.

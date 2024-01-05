@@ -222,22 +222,24 @@ func TestRevert(t *testing.T) {
 	assert.NoError(err)
 
 	const (
-		inChunkSize = 2
-		outMaxSize  = 8
+		inChunkSize = 4
+		outMaxSize  = 11
 	)
 
 	for i0 := 0; i0 < len(data); {
 		dHereon := data[i0:]
 		_ = dHereon
-		if i0 == 164 {
+		if i0 == 8 {
 			fmt.Println("i0:", i0)
 		}
 
 		i := i0
-		for ; i < len(data) && compressor.Len() <= outMaxSize; i += inChunkSize {
+		for ; i < len(data) && compressor.Len() < outMaxSize; i += inChunkSize {
 			_, err = compressor.Write(data[i:min(i+inChunkSize, len(data))])
 			assert.NoError(err)
-			if compressor.Len() > outMaxSize && i+inChunkSize-i0+3 <= outMaxSize {
+			if uncompressedSize := i + inChunkSize - i0 + 3; compressor.Len() >= outMaxSize &&
+				uncompressedSize <= outMaxSize &&
+				compressor.Len() > uncompressedSize {
 				assert.True(compressor.ConsiderBypassing())
 			}
 		}
