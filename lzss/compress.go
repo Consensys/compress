@@ -257,7 +257,6 @@ func (compressor *Compressor) Reset() {
 }
 
 func (compressor *Compressor) Len() int {
-	compressor.considerBypassing()
 	return compressor.outBuf.Len()
 }
 
@@ -279,7 +278,7 @@ func (compressor *Compressor) Revert() error {
 	return compressor.bw.Close()
 }
 
-func (compressor *Compressor) considerBypassing() {
+func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 
 	if compressor.outBuf.Len() > compressor.inBuf.Len()+headerBitLen/8 {
 		// compression was not worth it
@@ -294,22 +293,18 @@ func (compressor *Compressor) considerBypassing() {
 		if _, err := compressor.outBuf.Write(compressor.inBuf.Bytes()); err != nil {
 			panic(err)
 		}
+		return true
 	}
-
+	return false
 }
 
 // Bytes returns the compressed data
-// if compression was not worth it, it returns the uncompressed data and from then on it will not compress anymore
 func (compressor *Compressor) Bytes() []byte {
-	compressor.considerBypassing()
 	return compressor.outBuf.Bytes()
 }
 
 // Stream returns a stream of the compressed data
-// if compression was not worth it, it returns the uncompressed data and from then on it will not compress anymore
 func (compressor *Compressor) Stream() compress.Stream {
-	compressor.considerBypassing()
-
 	wordNbBits := uint8(compressor.level)
 	if wordNbBits == 0 {
 		wordNbBits = 8
