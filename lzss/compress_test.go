@@ -350,13 +350,24 @@ func min(a, b int) int {
 }
 
 func TestCraftExpandingInput(t *testing.T) {
+	assert := require.New(t)
 	dict := getDictionary()
+
+	// craft an input we know will expand
 	d := craftExpandingInput(dict, 100000)
 	compressor, err := NewCompressor(dict, BestCompression)
-	require.NoError(t, err)
+	assert.NoError(err)
 	c, err := compressor.Compress(d)
-	require.NoError(t, err)
-	require.Greater(t, 10*len(c)/len(d), 12) // 1.2⁻¹ : a very disappointing compression ratio
+	lenC := len(c)
+	assert.NoError(err)
+	assert.Greater(10*len(c)/len(d), 12) // 1.2⁻¹ : a very disappointing compression ratio
+
+	// ensure that bypassing works.
+	compressor.Reset()
+	_, err = compressor.Write(d)
+	assert.NoError(err)
+	assert.True(compressor.ConsiderBypassing(), "should consider bypassing")
+	assert.Less(compressor.Len(), lenC, "should have switched to NoCompression")
 }
 
 func craftExpandingInput(dict []byte, size int) []byte {
