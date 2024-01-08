@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 
@@ -418,4 +419,35 @@ func craftExpandingInput(dict []byte, size int) []byte {
 		}
 	}
 	return res
+}
+
+func TestRevertAfterBypass(t *testing.T) {
+	const (
+		block1Size = 500
+		block2Size = 1000
+	)
+
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(t, err)
+
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, BestCompression)
+	assert.NoError(t, err)
+
+	_, err = compressor.Write(d[:block1Size])
+	assert.NoError(t, err)
+
+	block2 := craftExpandingInput(dict, block2Size)
+	_, err = compressor.Write(block2)
+	assert.NoError(t, err)
+
+	assert.True(t, compressor.ConsiderBypassing())
+
+	assert.NoError(t, compressor.Revert())
+
+	c := compressor.Bytes()
+	dBack, err := Decompress(c, dict)
+	assert.NoError(t, err)
+	assert.Equal(t, d[:block1Size], dBack)
+	assert.Less(t, len(c), block1Size, "first block should be compressed")
 }

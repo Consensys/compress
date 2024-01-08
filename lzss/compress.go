@@ -18,9 +18,11 @@ type Compressor struct {
 
 	inBuf bytes.Buffer
 
+	// some records of the previous state, used for reverting
 	lastOutLen        int
 	lastNbSkippedBits uint8
 	lastInLen         int
+	justBypassed      bool
 
 	inputIndex *suffixarray.Index
 	inputSa    [MaxInputSize]int32 // suffix array space.
@@ -129,6 +131,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	compressor.lastNbSkippedBits = compressor.nbSkippedBits
+	compressor.justBypassed = false
 	if err = compressor.appendInput(d); err != nil {
 		return
 	}
@@ -254,6 +257,7 @@ func (compressor *Compressor) Reset() {
 	compressor.inBuf.Reset()
 	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.lastNbSkippedBits = 0
+	compressor.justBypassed = false
 	compressor.nbSkippedBits = 0
 	compressor.lastInLen = 0
 }
@@ -274,12 +278,20 @@ func (compressor *Compressor) Revert() error {
 	if compressor.lastInLen == -1 {
 		return fmt.Errorf("cannot revert twice in a row")
 	}
+
 	compressor.inBuf.Truncate(compressor.lastInLen)
 	compressor.lastInLen = -1
 
-	compressor.outBuf.Truncate(compressor.lastOutLen)
-	compressor.nbSkippedBits = compressor.lastNbSkippedBits
-	return nil
+	if compressor.justBypassed {
+		in := compressor.inBuf.Bytes()
+		compressor.Reset()
+		_, err := compressor.Write(in) // recompress everything. inefficient but 1) gets a better compression ratio and 2) this is not a common case
+		return err
+	} else {
+		compressor.outBuf.Truncate(compressor.lastOutLen)
+		compressor.nbSkippedBits = compressor.lastNbSkippedBits
+		return nil
+	}
 }
 
 // ConsiderBypassing switches to NoCompression if we get significant expansion instead of compression
@@ -289,7 +301,9 @@ func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 		// compression was not worth it
 		compressor.level = NoCompression
 		compressor.nbSkippedBits = 0
-		compressor.lastInLen = -1 // cannot revert
+		compressor.lastOutLen = compressor.lastInLen + headerBitLen/8
+		compressor.lastNbSkippedBits = 0
+		compressor.justBypassed = true
 		compressor.outBuf.Reset()
 		header := Header{Version: Version, Level: NoCompression}
 		if _, err := header.WriteTo(&compressor.outBuf); err != nil {
