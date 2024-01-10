@@ -74,5 +74,5 @@ func (b *backref) savings() int {
 	if b.length == -1 {
 		return math.MinInt // -1 is a special value
 	}
-	return b.length - b.bType.nbBytesBackRef
+	return 8*b.length - int(b.bType.NbBitsBackRef)
 }
