@@ -1,7 +1,7 @@
 package compress
 
 import (
-	"bytes"
+	bytesLib "bytes"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -34,7 +34,7 @@ func (s *Stream) At(i int) int {
 
 func NewStream(in []byte, bitsPerSymbol uint8) (Stream, error) {
 	d := make([]int, len(in)*8/int(bitsPerSymbol))
-	r := bitio.NewReader(bytes.NewReader(in))
+	r := bitio.NewReader(bytesLib.NewReader(in))
 	for i := range d {
 		if n, err := r.ReadBits(bitsPerSymbol); err != nil {
 			return Stream{}, err
@@ -83,10 +83,13 @@ func (s *Stream) Pack(nbBits int) []*big.Int {
 	return packed
 }
 
+// FillBytes aligns the stream first according to "field elements" of length nbBits, and then aligns the field elements to bytes
 func (s *Stream) FillBytes(bytes []byte, nbBits int) error {
 	bitsPerWord := bitLen(s.NbSymbs)
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	bytesPerElem := (nbBits + 7) / 8
+
+	nbElems := (len(s.D) + wordsPerElem - 1) / wordsPerElem
 
 	if len(bytes) < (len(s.D)*bitsPerWord+7)/8+4 {
 		return errors.New("not enough room in bytes")
@@ -98,39 +101,40 @@ func (s *Stream) FillBytes(bytes []byte, nbBits int) error {
 	var radix, elem big.Int // todo @tabaie all this big.Int business seems unnecessary. try using bitio instead?
 	radix.Lsh(big.NewInt(1), uint(bitsPerWord))
 
-	for i := 0; i < len(bytes) && i*wordsPerElem < len(s.D); i += bytesPerElem {
+	for i := 0; i < nbElems; i++ {
 		elem.SetInt64(0)
-		for j := wordsPerElem - 1; j >= 0; j-- {
+		for j := 0; j < wordsPerElem; j++ {
 			absJ := i*wordsPerElem + j
 			if absJ >= len(s.D) {
-				continue
+				break
 			}
 			elem.Mul(&elem, &radix).Add(&elem, big.NewInt(int64(s.D[absJ])))
 		}
-		elem.FillBytes(bytes[i : i+bytesPerElem])
+		elem.FillBytes(bytes[i*bytesPerElem : (i+1)*bytesPerElem])
 	}
 	return nil
 }
 
-func (s *Stream) ReadBytes(byts []byte, nbBits int) error {
+// ReadBytes first reads elements of length nbBits in a byte-aligned manner, and then reads the elements into the stream
+func (s *Stream) ReadBytes(bytes []byte, nbBits int) error {
 	bitsPerWord := bitLen(s.NbSymbs)
 
 	if s.NbSymbs != 1<<bitsPerWord {
 		return errors.New("only powers of 2 currently supported for NbSymbs")
 	}
 
-	s.resize(int(binary.BigEndian.Uint32(byts[:4])))
-	byts = byts[4:]
+	s.resize(int(binary.BigEndian.Uint32(bytes[:4])))
+	bytes = bytes[4:]
 
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	bytesPerElem := (nbBits + 7) / 8
 	nbElems := (len(s.D) + wordsPerElem - 1) / wordsPerElem
 
-	if len(byts) < nbElems*bytesPerElem {
+	if len(bytes) < nbElems*bytesPerElem {
 		return errors.New("not enough bytes")
 	}
 
-	w := bitio.NewReader(bytes.NewReader(byts))
+	w := bitio.NewReader(bytesLib.NewReader(bytes))
 
 	for i := 0; i < nbElems; i++ {
 		w.TryReadBits(uint8(8*bytesPerElem - bitsPerWord*wordsPerElem))
@@ -141,7 +145,7 @@ func (s *Stream) ReadBytes(byts []byte, nbBits int) error {
 		for j := 0; j < wordsPerElem; j++ {
 			wordI := i*wordsPerElem + j
 			if wordI >= len(s.D) {
-				break
+				continue
 			}
 			s.D[wordI] = int(w.TryReadBits(uint8(bitsPerWord)))
 		}
@@ -218,7 +222,7 @@ func (s *Stream) Marshal() []byte {
 		nbBytes++
 		encodeLen = true
 	}
-	bb := bytes.NewBuffer(make([]byte, 0, nbBytes))
+	bb := bytesLib.NewBuffer(make([]byte, 0, nbBytes))
 
 	w := bitio.NewWriter(bb)
 	for i := range s.D {
@@ -255,7 +259,7 @@ func (s *Stream) Unmarshal(b []byte) *Stream {
 	}
 	s.D = s.D[:nbWords]
 
-	r := bitio.NewReader(bytes.NewReader(b))
+	r := bitio.NewReader(bytesLib.NewReader(b))
 	for i := range s.D {
 		if n, err := r.ReadBits(uint8(wordLen)); err != nil {
 			panic(err)
