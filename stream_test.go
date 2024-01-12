@@ -1,7 +1,9 @@
 package compress
 
 import (
+	"bytes"
 	"github.com/stretchr/testify/require"
+	"math/big"
 	"math/rand"
 	"testing"
 
@@ -50,6 +52,37 @@ func TestFillBytesNotEnoughSpace(t *testing.T) {
 	fillRandom(s)
 
 	assert.Error(t, s.FillBytes(data, 252))
+}
+
+func TestRoundTripPackFillBytesMarshalUnmarshalReadBytes(t *testing.T) {
+	// typical BlobMaker case;
+	// we have 2 slices of random bytes.
+	// we want to concatenate them in the blob, and pack them in such a way
+	// that len(packed) % 32 == 0, and that each [:32] byte subslice is a valid bls12377 fr element.
+	// independently, we want to be able to unmarshal the blob, and read the bytes back.
+	n1, n2 := rand.Intn(1000)+1, rand.Intn(1000)+1 //#nosec G404 weak rng is fine here
+	b1, b2 := make([]byte, n1), make([]byte, n2)
+
+	concat := bytes.Join([][]byte{b1, b2}, []byte{})
+	s, err := NewStream(concat, 8)
+	assert.NoError(t, err)
+
+	packed := make([]byte, 128*1024)
+	var modulus big.Int
+	modulus.SetString("12ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001", 16)
+	assert.NoError(t, s.FillBytes(packed, modulus.BitLen()))
+
+	var x big.Int
+	for i := 0; i < len(packed); i += 32 {
+		x.SetBytes(packed[i : i+32])
+		assert.True(t, x.Cmp(&modulus) < 0)
+	}
+
+	unpacked := Stream{NbSymbs: s.NbSymbs}
+	assert.NoError(t, unpacked.ReadBytes(packed, modulus.BitLen()))
+	b1Back := unpacked.ToBytes()
+
+	assert.Equal(t, b1Back[:n1], b1)
 }
 
 func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
