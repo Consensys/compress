@@ -270,3 +270,25 @@ func (s *Stream) Unmarshal(b []byte) *Stream {
 
 	return s
 }
+
+// ToBytes writes the content of the stream to a byte slice, with no metadata about the size of the stream or the number of symbols.
+// it mainly serves testing purposes so in case of a write error it panics.
+func (s *Stream) ToBytes() []byte {
+	bitsPerWord := bitLen(s.NbSymbs)
+
+	nbBytes := (len(s.D)*bitsPerWord + 7) / 8
+	bb := bytesLib.NewBuffer(make([]byte, 0, nbBytes))
+
+	w := bitio.NewWriter(bb)
+	for i := range s.D {
+		w.TryWriteBits(uint64(s.D[i]), uint8(bitsPerWord))
+	}
+	if w.TryError != nil {
+		panic(w.TryError)
+	}
+	if err := w.Close(); err != nil {
+		panic(err)
+	}
+
+	return bb.Bytes()
+}

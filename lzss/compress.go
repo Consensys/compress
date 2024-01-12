@@ -335,7 +335,7 @@ func (compressor *Compressor) Stream() compress.Stream {
 	}
 
 	return compress.Stream{
-		D:       res.D[:(res.Len()-int(compressor.lastNbSkippedBits))/int(wordNbBits)],
+		D:       res.D[:res.Len()-(int(compressor.lastNbSkippedBits)/int(wordNbBits))],
 		NbSymbs: res.NbSymbs,
 	}
 }

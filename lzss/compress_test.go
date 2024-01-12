@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/consensys/compress"
 	"os"
 	"testing"
 
@@ -230,6 +231,47 @@ func TestAverageBatch(t *testing.T) {
 	lzssDecompressed, err := decompresslzss_v1(lzssRes.compressed, dict)
 	assert.NoError(err)
 	assert.True(bytes.Equal(data, lzssDecompressed))
+
+}
+
+func TestAverageBatchWithSerialization(t *testing.T) {
+	assert := require.New(t)
+
+	// read "average_block.hex" file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(err)
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	assert.NoError(err)
+
+	data = data[:1]
+
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, GoodCompression)
+	assert.NoError(err)
+
+	_, err = compressor.Write(data)
+	assert.NoError(err)
+
+	blob := make([]byte, 128*1024)
+	cStream := compressor.Stream()
+	assert.NoError(cStream.FillBytes(blob, 255)) // emulating bls12-377
+
+	cStreamBack := compress.Stream{NbSymbs: cStream.NbSymbs}
+	assert.NoError(cStreamBack.ReadBytes(blob, 255))
+
+	assert.Equal(cStream, cStreamBack)
+
+	c := compressor.Bytes()
+	cBack := cStreamBack.ToBytes()
+	assert.True(bytes.Equal(c, cBack))
+
+	dataBack, err := Decompress(cStreamBack.ToBytes(), dict)
+	assert.NoError(err)
+
+	_ = dataBack
+	assert.True(bytes.Equal(data, dataBack))
 
 }
 
