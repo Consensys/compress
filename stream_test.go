@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"github.com/stretchr/testify/require"
 	"math/rand"
 	"testing"
 
@@ -39,14 +40,26 @@ func testMarshal(t *testing.T, s Stream) {
 	assert.Equal(t, s, sBack, "marshalling round trip failed for nbSymbs %d and size %d", s.NbSymbs, len(s.D))
 }
 
-func testFillBytes(t *testing.T, b []byte, nbBits int, s Stream) {
+func TestFillBytesNotEnoughSpace(t *testing.T) {
+	data := make([]byte, 1000)
+	rand.Read(data) //#nosec G404 weak rng is fine here
+
+	s, err := NewStream(data, 8)
+	assert.NoError(t, err)
+
 	fillRandom(s)
 
-	assert.NoError(t, s.FillBytes(b, nbBits))
+	assert.Error(t, s.FillBytes(data, 252))
+}
+
+func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
+	fillRandom(s)
+
+	require.NoError(t, s.FillBytes(buffer, nbBits))
 
 	sBack := Stream{NbSymbs: s.NbSymbs}
-	assert.NoError(t, sBack.ReadBytes(b, nbBits))
-	assert.Equal(t, s, sBack, "fill bytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
+	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
+	require.Equal(t, s, sBack, "fill bytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
 }
 
 func fillRandom(s Stream) {

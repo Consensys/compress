@@ -86,6 +86,11 @@ func (s *Stream) Pack(nbBits int) []*big.Int {
 // FillBytes aligns the stream first according to "field elements" of length nbBits, and then aligns the field elements to bytes
 func (s *Stream) FillBytes(bytes []byte, nbBits int) error {
 	bitsPerWord := bitLen(s.NbSymbs)
+
+	if bitsPerWord >= nbBits {
+		return errors.New("words do not fit in elements")
+	}
+
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	bytesPerElem := (nbBits + 7) / 8
 
@@ -118,6 +123,10 @@ func (s *Stream) FillBytes(bytes []byte, nbBits int) error {
 // ReadBytes first reads elements of length nbBits in a byte-aligned manner, and then reads the elements into the stream
 func (s *Stream) ReadBytes(bytes []byte, nbBits int) error {
 	bitsPerWord := bitLen(s.NbSymbs)
+
+	if bitsPerWord >= nbBits {
+		return errors.New("words do not fit in elements")
+	}
 
 	if s.NbSymbs != 1<<bitsPerWord {
 		return errors.New("only powers of 2 currently supported for NbSymbs")
