@@ -98,7 +98,7 @@ func (s *Stream) FillBytes(bytes []byte, nbBits int) error {
 	var radix, elem big.Int // todo @tabaie all this big.Int business seems unnecessary. try using bitio instead?
 	radix.Lsh(big.NewInt(1), uint(bitsPerWord))
 
-	for i := 0; i < len(bytes); i += bytesPerElem {
+	for i := 0; i < len(bytes) && i*wordsPerElem < len(s.D); i += bytesPerElem {
 		elem.SetInt64(0)
 		for j := wordsPerElem - 1; j >= 0; j-- {
 			absJ := i*wordsPerElem + j
