@@ -54,7 +54,7 @@ func TestFillBytesNotEnoughSpace(t *testing.T) {
 	assert.Error(t, s.FillBytes(data, 252))
 }
 
-func TestRoundTripPackFillBytesMarshalUnmarshalReadBytesBls12377(t *testing.T) {
+func TestFillBytesArithmeticBls12377(t *testing.T) {
 	// typical BlobMaker case;
 	// we have 2 slices of random bytes.
 	// we want to concatenate them in the blob, and pack them in such a way
@@ -62,10 +62,10 @@ func TestRoundTripPackFillBytesMarshalUnmarshalReadBytesBls12377(t *testing.T) {
 	// independently, we want to be able to unmarshal the blob, and read the bytes back.
 	var modulus big.Int
 	modulus.SetString("12ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001", 16)
-	testRoundTripPackFillBytesMarshalUnmarshalReadBytes(t, &modulus)
+	testFillBytesArithmetic(t, &modulus)
 }
 
-func testRoundTripPackFillBytesMarshalUnmarshalReadBytes(t *testing.T, modulus *big.Int) {
+func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 	modulusByteLen := (modulus.BitLen() + 7) / 8
 	n1, n2 := rand.Intn(1000)+1, rand.Intn(1000)+1 //#nosec G404 weak rng is fine here
 	b1, b2 := make([]byte, n1), make([]byte, n2)

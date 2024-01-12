@@ -222,65 +222,7 @@ func bitLen(n int) int {
 	return bitLen
 }
 
-func (s *Stream) Marshal() []byte {
-	wordLen := bitLen(s.NbSymbs)
-
-	nbBytes := (len(s.D)*wordLen + 7) / 8
-	encodeLen := false
-	if s.NbSymbs <= 128 {
-		nbBytes++
-		encodeLen = true
-	}
-	bb := bytes.NewBuffer(make([]byte, 0, nbBytes))
-
-	w := bitio.NewWriter(bb)
-	for i := range s.D {
-		if err := w.WriteBits(uint64(s.D[i]), uint8(wordLen)); err != nil {
-			panic(err)
-		}
-	}
-	if err := w.Close(); err != nil {
-		panic(err)
-	}
-
-	if encodeLen {
-		nbWordsInLastByte := len(s.D) - ((nbBytes-2)*8+wordLen-1)/wordLen
-		bb.WriteByte(byte(nbWordsInLastByte))
-	}
-
-	return bb.Bytes()
-}
-
-func (s *Stream) Unmarshal(b []byte) *Stream {
-	wordLen := bitLen(s.NbSymbs)
-
-	var nbWords int
-	if s.NbSymbs <= 128 {
-		nbWordsNotEntirelyInLastByte := ((len(b)-2)*8 + wordLen - 1) / wordLen
-		nbWords = nbWordsNotEntirelyInLastByte + int(b[len(b)-1])
-		b = b[:len(b)-1]
-	} else {
-		nbWords = (len(b) * 8) / wordLen
-	}
-
-	if cap(s.D) < nbWords {
-		s.D = make([]int, nbWords)
-	}
-	s.D = s.D[:nbWords]
-
-	r := bitio.NewReader(bytes.NewReader(b))
-	for i := range s.D {
-		if n, err := r.ReadBits(uint8(wordLen)); err != nil {
-			panic(err)
-		} else {
-			s.D[i] = int(n)
-		}
-	}
-
-	return s
-}
-
-// ToBytes writes the content of the stream to a byte slice, with no metadata about the size of the stream or the number of symbols.
+// ToBytes writes the CONTENT of the stream to a byte slice, with no metadata about the size of the stream or the number of symbols.
 // it mainly serves testing purposes so in case of a write error it panics.
 func (s *Stream) ToBytes() []byte {
 	bitsPerWord := bitLen(s.NbSymbs)
