@@ -58,10 +58,17 @@ func (s *Stream) BreakUp(nbSymbs int) Stream {
 }
 
 func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
-	bitsPerWord := bitLen(s.NbSymbs)
-	res := make([]byte, (len(s.D)*bitsPerWord+7)/8+4)
+	res := make([]byte, StreamSerializedSize(len(s.D), bitLen(s.NbSymbs), nbBits))
 	err := s.FillBytes(res, nbBits)
 	return res, err
+}
+
+func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
+	wordsPerElem := (nbBits + wordNbBits - 1) / wordNbBits
+	wordsForLen := (31 + wordNbBits) / wordNbBits
+	bytesPerElem := (nbBits + 7) / 8
+	nbElems := (wordsForLen + nbWords + wordsPerElem - 1) / wordsPerElem
+	return nbElems * bytesPerElem
 }
 
 type bytesWriter struct {

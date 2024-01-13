@@ -348,12 +348,8 @@ func (compressor *Compressor) Stream() compress.Stream {
 // SerializedStreamSize returns the size of the compressed stream, if it were to be serialized by the FillBytes method
 func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
 	bitsPerWord := int(compressor.intendedLevel)
-	wordsPerElem := (nbBits + bitsPerWord - 1) / bitsPerWord
-	wordsForLen := (31 + bitsPerWord) / bitsPerWord
 	wordsForData := (compressor.outBuf.Len()*8 - int(compressor.nbSkippedBits)) / bitsPerWord
-	bytesPerElem := (nbBits + 7) / 8
-	nbElems := (wordsForLen + wordsForData + wordsPerElem - 1) / wordsPerElem
-	return nbElems * bytesPerElem
+	return compress.StreamSerializedSize(wordsForData, bitsPerWord, nbBits)
 }
 
 // Compress compresses the given data; if hint is provided, the compressor will try to use it

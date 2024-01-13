@@ -82,6 +82,13 @@ func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
 	sBack := Stream{NbSymbs: s.NbSymbs}
 	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
 	require.Equal(t, s, sBack, "fill bytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
+
+	// test ToBytes
+	buffer, err := s.ToBytes(nbBits)
+	require.NoError(t, err)
+
+	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
+	require.Equal(t, s, sBack, "ToBytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
 }
 
 func fillRandom(s Stream) {
