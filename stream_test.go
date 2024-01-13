@@ -62,7 +62,7 @@ func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 	assert.NoError(t, s.FillBytes(packed, modulus.BitLen()))
 
 	var x big.Int
-	for i := 4; i+modulusByteLen <= len(packed); i += modulusByteLen {
+	for i := 0; i+modulusByteLen <= len(packed); i += modulusByteLen {
 		x.SetBytes(packed[i : i+modulusByteLen])
 		assert.True(t, x.Cmp(modulus) < 0)
 	}
