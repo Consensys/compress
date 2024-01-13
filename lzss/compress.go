@@ -2,6 +2,7 @@ package lzss
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/bits"
 
@@ -61,6 +62,10 @@ const (
 // The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
 // The level determines the bit alignment of the compressed data. The "higher" the level, the better the compression ratio but the more constraints on the decompressor.
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
+	if level == NoCompression {
+		return nil, errors.New("why even")
+	}
+
 	dict = AugmentDict(dict)
 	if len(dict) > MaxDictSize {
 		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
@@ -338,6 +343,17 @@ func (compressor *Compressor) Stream() compress.Stream {
 		D:       res.D[:res.Len()-(int(compressor.lastNbSkippedBits)/int(wordNbBits))],
 		NbSymbs: res.NbSymbs,
 	}
+}
+
+// SerializedStreamSize returns the size of the compressed stream, if it were to be serialized by the FillBytes method
+func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
+	bitsPerWord := int(compressor.intendedLevel)
+	wordsPerElem := (nbBits + bitsPerWord - 1) / bitsPerWord
+	wordsForLen := (31 + bitsPerWord) / bitsPerWord
+	wordsForData := (compressor.outBuf.Len()*8 - int(compressor.nbSkippedBits)) / bitsPerWord
+	bytesPerElem := (nbBits + 7) / 8
+	nbElems := (wordsForLen + wordsForData + wordsPerElem - 1) / wordsPerElem
+	return nbElems * bytesPerElem
 }
 
 // Compress compresses the given data; if hint is provided, the compressor will try to use it
