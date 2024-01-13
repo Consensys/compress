@@ -99,7 +99,7 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	bytesPerElem := (nbBits + 7) / 8
 	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
 
-	if len(dst) < ((len(s.D)+wordsForNb)*bitsPerWord+7)/8 {
+	if len(dst) < StreamSerializedSize(len(s.D), bitsPerWord, nbBits) {
 		return errors.New("not enough room in dst")
 	}
 

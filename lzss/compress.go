@@ -349,6 +349,9 @@ func (compressor *Compressor) Stream() compress.Stream {
 func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
 	bitsPerWord := int(compressor.intendedLevel)
 	wordsForData := (compressor.outBuf.Len()*8 - int(compressor.nbSkippedBits)) / bitsPerWord
+	if compressor.level == NoCompression {
+		wordsForData = (compressor.inBuf.Len() + headerBitLen/8) * 8 / bitsPerWord
+	}
 	return compress.StreamSerializedSize(wordsForData, bitsPerWord, nbBits)
 }
 

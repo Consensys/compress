@@ -2,6 +2,7 @@ package compress
 
 import (
 	"bytes"
+	"crypto"
 	"github.com/stretchr/testify/require"
 	"math/big"
 	"math/rand"
@@ -44,6 +45,16 @@ func TestFillBytesArithmeticBls12377(t *testing.T) {
 	var modulus big.Int
 	modulus.SetString("12ab655e9a2ca55660b44d1e5c37b00159aa76fed00000010a11800000000001", 16)
 	testFillBytesArithmetic(t, &modulus)
+}
+
+func TestChecksumSucceeds(t *testing.T) {
+	d := make([]byte, 65536)
+	rand.Read(d) //#nosec G404 weak rng is fine here
+	s, err := NewStream(d, 8)
+	assert.NoError(t, err)
+
+	_, err = s.Checksum(crypto.SHA256.New(), 253)
+	assert.Error(t, err)
 }
 
 func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
