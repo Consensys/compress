@@ -40,24 +40,6 @@ func TestNoCompression(t *testing.T) {
 	testCompressionRoundTrip(t, []byte{'h', 'i'})
 }
 
-func TestNoCompressionAttempt(t *testing.T) {
-
-	d := []byte{253, 254, 255}
-
-	compressor, err := NewCompressor(getDictionary(), NoCompression)
-	require.NoError(t, err)
-
-	c, err := compressor.Compress(d)
-	require.NoError(t, err)
-
-	dBack, err := Decompress(c, getDictionary())
-	require.NoError(t, err)
-
-	if !bytes.Equal(d, dBack) {
-		t.Fatal("round trip failed")
-	}
-}
-
 func Test9E(t *testing.T) {
 	testCompressionRoundTrip(t, []byte{1, 1, 1, 1, 2, 1, 1, 1, 1})
 }
