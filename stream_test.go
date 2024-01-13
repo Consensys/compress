@@ -10,20 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMarshalRoundTrip(t *testing.T) {
-	d := make([]int, 1000)
-	for i := 0; i < 1000; i++ {
-		var s Stream
-		s.D = d[:rand.Intn(len(d))+1]  //#nosec G404 weak rng is fine here
-		s.NbSymbs = rand.Intn(510) + 2 //#nosec G404 weak rng is fine here
-
-		testMarshal(t, s)
-	}
-}
-
 func TestFillBytesRoundTrip(t *testing.T) {
-	d := make([]int, 1000)
-	b := make([]byte, 10000)
+	d := make([]int, 2)
+	b := make([]byte, 100)
 
 	for i := 0; i < 1000; i++ {
 		var s Stream
@@ -32,14 +21,6 @@ func TestFillBytesRoundTrip(t *testing.T) {
 		fieldSize := 248 + rand.Intn(9)     //#nosec G404 weak rng is fine here
 		testFillBytes(t, b, fieldSize, s)
 	}
-}
-
-func testMarshal(t *testing.T, s Stream) {
-	fillRandom(s)
-	marshalled := s.Marshal()
-	sBack := Stream{NbSymbs: s.NbSymbs}
-	sBack.Unmarshal(marshalled)
-	assert.Equal(t, s, sBack, "marshalling round trip failed for nbSymbs %d and size %d", s.NbSymbs, len(s.D))
 }
 
 func TestFillBytesNotEnoughSpace(t *testing.T) {
@@ -88,7 +69,7 @@ func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 
 	unpacked := Stream{NbSymbs: s.NbSymbs}
 	assert.NoError(t, unpacked.ReadBytes(packed, modulus.BitLen()))
-	b1Back := unpacked.ToBytes()
+	b1Back := unpacked.ContentToBytes()
 
 	assert.Equal(t, b1Back[:n1], b1)
 

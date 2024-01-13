@@ -264,10 +264,10 @@ func TestAverageBatchWithSerialization(t *testing.T) {
 	assert.Equal(cStream, cStreamBack)
 
 	c := compressor.Bytes()
-	cBack := cStreamBack.ToBytes()
+	cBack := cStreamBack.ContentToBytes()
 	assert.True(bytes.Equal(c, cBack))
 
-	dataBack, err := Decompress(cStreamBack.ToBytes(), dict)
+	dataBack, err := Decompress(cStreamBack.ContentToBytes(), dict)
 	assert.NoError(err)
 
 	_ = dataBack

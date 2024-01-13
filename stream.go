@@ -2,12 +2,9 @@ package compress
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
-	"hash"
-	"math/big"
-
 	"github.com/icza/bitio"
+	"hash"
 )
 
 // Stream is an inefficient data structure used for easy experimentation with compression algorithms.
@@ -60,27 +57,25 @@ func (s *Stream) BreakUp(nbSymbs int) Stream {
 	return Stream{d, nbSymbs}
 }
 
-// todo @tabaie too many copy pastes in the next three funcs
+func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
+	bitsPerWord := bitLen(s.NbSymbs)
+	res := make([]byte, (len(s.D)*bitsPerWord+7)/8+4)
+	err := s.FillBytes(res, nbBits)
+	return res, err
+}
 
-func (s *Stream) Pack(nbBits int) []*big.Int {
-	wordLen := bitLen(s.NbSymbs)
-	wordsPerElem := (nbBits - 1) / wordLen
+type bytesWriter struct {
+	i int
+	b []byte
+}
 
-	var radix big.Int
-	radix.Lsh(big.NewInt(1), uint(wordLen))
-
-	packed := make([]*big.Int, (len(s.D)+wordsPerElem-1)/wordsPerElem)
-	for i := range packed {
-		packed[i] = new(big.Int)
-		for j := wordsPerElem - 1; j >= 0; j-- {
-			absJ := i*wordsPerElem + j
-			if absJ >= len(s.D) {
-				continue
-			}
-			packed[i].Mul(packed[i], &radix).Add(packed[i], big.NewInt(int64(s.D[absJ])))
-		}
+func (b *bytesWriter) Write(p []byte) (n int, err error) {
+	if b.i+len(p) > len(b.b) {
+		return 0, errors.New("not enough room in dst")
 	}
-	return packed
+	copy(b.b[b.i:], p)
+	b.i += len(p)
+	return len(p), nil
 }
 
 // FillBytes aligns the stream first according to "field elements" of length nbBits, and then aligns the field elements to bytes
@@ -91,33 +86,49 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 		return errors.New("words do not fit in elements")
 	}
 
+	wordsForNb := (31 + bitsPerWord) / bitsPerWord
 	wordsPerElem := (nbBits - 1) / bitsPerWord
+	nbElems := (len(s.D) + wordsForNb + wordsPerElem - 1) / wordsPerElem
 	bytesPerElem := (nbBits + 7) / 8
+	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
 
-	nbElems := (len(s.D) + wordsPerElem - 1) / wordsPerElem
-
-	if len(dst) < (len(s.D)*bitsPerWord+7)/8+4 {
+	if len(dst) < ((len(s.D)+wordsForNb)*bitsPerWord+7)/8 {
 		return errors.New("not enough room in dst")
 	}
 
-	binary.BigEndian.PutUint32(dst[:4], uint32(len(s.D)))
-	dst = dst[4:]
+	num := make([]int, wordsForNb)
+	{ // WriteNum type operation. TODO @tabaie refactor into its own function
+		x := len(s.D)
+		for i := wordsForNb - 1; i >= 0; i-- {
+			num[i] = x % s.NbSymbs
+			x /= s.NbSymbs
+		}
+		if x != 0 {
+			return errors.New("writeNum overflow")
+		}
+	}
 
-	var radix, elem big.Int // todo @tabaie all this big.Int business seems unnecessary. try using bitio instead?
-	radix.Lsh(big.NewInt(1), uint(bitsPerWord))
+	dAt := func(i int) int64 {
+		if i < 0 {
+			return int64(num[i+wordsForNb])
+		}
+		return int64(s.D[i])
+	}
+
+	w := bitio.NewWriter(&bytesWriter{0, dst})
 
 	for i := 0; i < nbElems; i++ {
-		elem.SetInt64(0)
+		w.TryWriteBits(0, headroomBitsPerElem)
 		for j := 0; j < wordsPerElem; j++ {
-			absJ := i*wordsPerElem + j
+			absJ := i*wordsPerElem + j - wordsForNb
 			if absJ >= len(s.D) {
 				break
 			}
-			elem.Mul(&elem, &radix).Add(&elem, big.NewInt(int64(s.D[absJ])))
+			w.TryWriteBits(uint64(dAt(absJ)), uint8(bitsPerWord))
 		}
-		elem.FillBytes(dst[i*bytesPerElem : (i+1)*bytesPerElem])
 	}
-	return nil
+	w.TryAlign()
+	return w.TryError
 }
 
 // ReadBytes first reads elements of length nbBits in a byte-aligned manner, and then reads the elements into the stream
@@ -132,32 +143,49 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 		return errors.New("only powers of 2 currently supported for NbSymbs")
 	}
 
-	s.resize(int(binary.BigEndian.Uint32(src[:4])))
-	src = src[4:]
-
+	wordsForNb := (31 + bitsPerWord) / bitsPerWord
 	wordsPerElem := (nbBits - 1) / bitsPerWord
+	nbElems := (len(src)*8 + nbBits - 1) / nbBits
 	bytesPerElem := (nbBits + 7) / 8
-	nbElems := (len(s.D) + wordsPerElem - 1) / wordsPerElem
-
-	if len(src) < nbElems*bytesPerElem {
-		return errors.New("not enough bytes")
-	}
+	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
 
 	w := bitio.NewReader(bytes.NewReader(src))
+	sDLarge := s.D
+	if len(s.D) < wordsForNb {
+		s.D = make([]int, wordsForNb)
+		sDLarge = s.D
+	}
 
-	for i := 0; i < nbElems; i++ {
-		w.TryReadBits(uint8(8*bytesPerElem - bitsPerWord*wordsPerElem))
-		if i+1 == nbElems {
-			wordsToRead := len(s.D) - i*wordsPerElem
-			w.TryReadBits(uint8((wordsPerElem - wordsToRead) * bitsPerWord)) // skip unused bits
+	for i := 0; i < nbElems && i < (len(s.D)+wordsPerElem-1)/wordsPerElem; i++ {
+		if x := w.TryReadBits(headroomBitsPerElem); x != 0 {
+			return errors.New("headroom bits not zero")
 		}
 		for j := 0; j < wordsPerElem; j++ {
 			wordI := i*wordsPerElem + j
+
+			if wordI == wordsForNb {
+				_len := 0
+				for k := 0; k < wordsForNb; k++ {
+					_len *= s.NbSymbs
+					_len += s.D[k]
+				}
+				s.D = sDLarge
+				s.resize(_len)
+			}
+
+			if wordI >= wordsForNb {
+				wordI -= wordsForNb
+			}
+
 			if wordI >= len(s.D) {
 				continue
 			}
 			s.D[wordI] = int(w.TryReadBits(uint8(bitsPerWord)))
 		}
+	}
+
+	if nbElems < (len(s.D)+wordsForNb+wordsPerElem-1)/wordsPerElem {
+		return errors.New("insufficient bytes")
 	}
 
 	return w.TryError
@@ -178,20 +206,17 @@ func log(x, base int) int {
 	return exp
 }
 
-func (s *Stream) Checksum(hsh hash.Hash, fieldBits int) []byte {
-	packed := s.Pack(fieldBits)
+func (s *Stream) Checksum(hsh hash.Hash, fieldBits int) ([]byte, error) {
+	packed, err := s.ToBytes(fieldBits)
+	if err != nil {
+		return nil, err
+	}
 	fieldBytes := (fieldBits + 7) / 8
-	byts := make([]byte, fieldBytes)
-	for _, w := range packed {
-		w.FillBytes(byts)
-		hsh.Write(byts)
+	for i := 0; i < len(packed); i += fieldBytes {
+		hsh.Write(packed[i : i+fieldBytes])
 	}
 
-	length := make([]byte, fieldBytes)
-	big.NewInt(int64(s.Len())).FillBytes(length)
-	hsh.Write(length)
-
-	return hsh.Sum(nil)
+	return hsh.Sum(nil), err
 }
 
 func (s *Stream) WriteNum(r int, nbWords int) *Stream {
@@ -222,9 +247,9 @@ func bitLen(n int) int {
 	return bitLen
 }
 
-// ToBytes writes the CONTENT of the stream to a byte slice, with no metadata about the size of the stream or the number of symbols.
+// ContentToBytes writes the CONTENT of the stream to a byte slice, with no metadata about the size of the stream or the number of symbols.
 // it mainly serves testing purposes so in case of a write error it panics.
-func (s *Stream) ToBytes() []byte {
+func (s *Stream) ContentToBytes() []byte {
 	bitsPerWord := bitLen(s.NbSymbs)
 
 	nbBytes := (len(s.D)*bitsPerWord + 7) / 8
