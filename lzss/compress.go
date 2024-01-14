@@ -32,8 +32,8 @@ type Compressor struct {
 	dictIndex *suffixarray.Index
 	dictSa    [MaxDictSize]int32 // suffix array space.
 
-	level         Level
-	intendedLevel Level
+	level        Level
+	levelSetting Level
 }
 
 type Level uint8
@@ -80,7 +80,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 		// if we don't compress we don't need the dict.
 		c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
 	}
-	c.intendedLevel = level
+	c.levelSetting = level
 	c.Reset()
 	return c, nil
 }
@@ -250,7 +250,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 }
 
 func (compressor *Compressor) Reset() {
-	compressor.level = compressor.intendedLevel
+	compressor.level = compressor.levelSetting
 	compressor.outBuf.Reset()
 	header := Header{
 		Version: Version,
@@ -347,7 +347,7 @@ func (compressor *Compressor) Stream() compress.Stream {
 
 // SerializedStreamSize returns the size of the compressed stream, if it were to be serialized by the FillBytes method
 func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
-	bitsPerWord := int(compressor.intendedLevel)
+	bitsPerWord := int(compressor.levelSetting)
 	wordsForData := (compressor.outBuf.Len()*8 - int(compressor.nbSkippedBits)) / bitsPerWord
 	if compressor.level == NoCompression {
 		wordsForData = (compressor.inBuf.Len() + headerBitLen/8) * 8 / bitsPerWord
@@ -421,4 +421,8 @@ func (compressor *Compressor) appendInput(d []byte) error {
 	compressor.lastInLen = compressor.inBuf.Len()
 	compressor.inBuf.Write(d)
 	return nil
+}
+
+func (compressor *Compressor) LevelSetting() Level {
+	return compressor.levelSetting
 }

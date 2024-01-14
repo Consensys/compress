@@ -7,6 +7,9 @@ import (
 	"hash"
 )
 
+// todo @tabaie consider out-scoping NbSymbs > 256 and changing D's type to []byte
+// todo @tabaie consider requiring NbSymbs to be a power of 2 and using BitsPerSymb instead of NbSymbs
+
 // Stream is an inefficient data structure used for easy experimentation with compression algorithms.
 type Stream struct {
 	D       []int
@@ -31,19 +34,40 @@ func (s *Stream) At(i int) int {
 
 func NewStream(in []byte, bitsPerSymbol uint8) (Stream, error) {
 	var s Stream
-	err := s.ReadData(in, bitsPerSymbol)
+	err := s.New(in, bitsPerSymbol)
 	return s, err
 }
 
-// ReadData reads a stream from a byte slice, with the number of bits per symbol specified. As opposed to ReadBytes, it attempts to exhaust the input.
-func (s *Stream) ReadData(in []byte, bitsPerSymbol uint8) error {
-
-	d := make([]int, len(in)*8/int(bitsPerSymbol))
-	r := bitio.NewReader(bytes.NewReader(in))
-	for i := range d {
-		d[i] = int(r.TryReadBits(bitsPerSymbol))
+// New reads a stream from a byte slice, with the number of bits per symbol specified. As opposed to ReadBytes, it attempts to exhaust the input.
+func (s *Stream) New(in []byte, bitsPerSymbol uint8) error {
+	n := len(in) * 8 / int(bitsPerSymbol)
+	s.NbSymbs = 1 << bitsPerSymbol
+	if cap(s.D) < n {
+		s.D = make([]int, 0, n)
 	}
-	return r.TryError
+	s.D = s.D[:0]
+	_, err := s.Write(in)
+	return err
+}
+
+// Write in accordance with the io.Writer interface
+// todo api @tabaie reconcile which perspective the words "read" and "write" are used from. this one is in contrast with that of ReadBytes
+func (s *Stream) Write(p []byte) (n int, err error) {
+	bitsPerSymb := uint8(bitLen(s.NbSymbs))
+	toRead := len(p) * 8 / int(bitsPerSymb)
+	r := bitio.NewReader(bytes.NewReader(p))
+	for i := 0; i < toRead; i++ {
+		var x uint64
+		if x, err = r.ReadBits(bitsPerSymb); err != nil {
+			return (i*int(bitsPerSymb) + 7) / 8, err // counting the last partial byte
+		}
+		s.D = append(s.D, int(x))
+	}
+	return len(p), nil // counting the last partial byte
+}
+
+func (s *Stream) Reset() {
+	s.D = s.D[:0]
 }
 
 func (s *Stream) BreakUp(nbSymbs int) Stream {
