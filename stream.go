@@ -129,7 +129,7 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	nbElems := (len(s.D) + wordsForNb + wordsPerElem - 1) / wordsPerElem
 	bytesPerElem := (nbBits + 7) / 8
-	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
+	leftHeadroomBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
 
 	if len(dst) < StreamSerializedSize(len(s.D), bitsPerWord, nbBits) {
 		return errors.New("not enough room in dst")
@@ -157,16 +157,17 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	w := bitio.NewWriter(&bytesWriter{0, dst})
 
 	for i := 0; i < nbElems; i++ {
-		w.TryWriteBits(0, headroomBitsPerElem)
+		w.TryWriteBits(0, leftHeadroomBitsPerElem)
 		for j := 0; j < wordsPerElem; j++ {
 			absJ := i*wordsPerElem + j - wordsForNb
 			if absJ >= len(s.D) {
 				break
 			}
 			w.TryWriteBits(uint64(dAt(absJ)), uint8(bitsPerWord))
+			w.TryAlign()
 		}
 	}
-	w.TryAlign()
+
 	return w.TryError
 }
 
@@ -191,6 +192,7 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 	nbElems := (len(src)*8 + nbBits - 1) / nbBits
 	bytesPerElem := (nbBits + 7) / 8
 	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
+	leftHeadroomBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
 
 	w := bitio.NewReader(bytes.NewReader(src))
 	sDLarge := s.D
@@ -200,7 +202,7 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 	}
 
 	for i := 0; i < nbElems && i < (len(s.D)+wordsPerElem-1)/wordsPerElem; i++ {
-		if x := w.TryReadBits(headroomBitsPerElem); x != 0 {
+		if x := w.TryReadBits(leftHeadroomBitsPerElem); x != 0 {
 			return errors.New("headroom bits not zero")
 		}
 		for j := 0; j < wordsPerElem; j++ {
@@ -224,6 +226,9 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 				continue
 			}
 			s.D[wordI] = int(w.TryReadBits(uint8(bitsPerWord)))
+		}
+		if x := w.TryReadBits(headroomBitsPerElem - leftHeadroomBitsPerElem); x != 0 {
+			return errors.New("headroom bits not zero")
 		}
 	}
 
