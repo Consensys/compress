@@ -276,3 +276,27 @@ func (s *Stream) ContentToBytes() []byte {
 
 	return bb.Bytes()
 }
+
+// Concat concatenates the streams into the current stream
+func (s *Stream) Concat(a ...Stream) error {
+	if len(a) == 0 {
+		s.D = nil
+		return nil
+	}
+
+	s.NbSymbs = a[0].NbSymbs
+	_len := 0
+	for _, v := range a {
+		_len += len(v.D)
+		if v.NbSymbs != s.NbSymbs {
+			return errors.New("streams must have the same number of symbols")
+		}
+	}
+	if cap(s.D) < _len {
+		s.D = make([]int, 0, _len)
+	}
+	for _, v := range a {
+		s.D = append(s.D, v.D...)
+	}
+	return nil
+}
