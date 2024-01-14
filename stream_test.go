@@ -3,9 +3,11 @@ package compress
 import (
 	"bytes"
 	"crypto"
+	"crypto/rand"
+	"encoding/binary"
 	"github.com/stretchr/testify/require"
 	"math/big"
-	"math/rand"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,9 +19,9 @@ func TestFillBytesRoundTrip(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		var s Stream
-		s.D = d[:rand.Intn(len(d))+1]       //#nosec G404 weak rng is fine here
-		s.NbSymbs = 1 << (rand.Intn(9) + 1) //#nosec G404 weak rng is fine here
-		fieldSize := 248 + rand.Intn(9)     //#nosec G404 weak rng is fine here
+		s.D = d[:randIntn(len(d))+1]       //#nosec G404 weak rng is fine here
+		s.NbSymbs = 1 << (randIntn(9) + 1) //#nosec G404 weak rng is fine here
+		fieldSize := 248 + randIntn(9)     //#nosec G404 weak rng is fine here
 		testFillBytes(t, b, fieldSize, s)
 	}
 }
@@ -60,7 +62,7 @@ func TestChecksumSucceeds(t *testing.T) {
 
 func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 	modulusByteLen := (modulus.BitLen() + 7) / 8
-	n1, n2 := rand.Intn(1000)+1, rand.Intn(1000)+1 //#nosec G404 weak rng is fine here
+	n1, n2 := randIntn(1000)+1, randIntn(1000)+1 //#nosec G404 weak rng is fine here
 	b1, b2 := make([]byte, n1), make([]byte, n2)
 	rand.Read(b1) //#nosec G404 weak rng is fine here
 	rand.Read(b2) //#nosec G404 weak rng is fine here
@@ -105,7 +107,7 @@ func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
 
 func fillRandom(s Stream) {
 	for i := range s.D {
-		s.D[i] = rand.Intn(s.NbSymbs) //#nosec G404 weak rng is fine here
+		s.D[i] = randIntn(s.NbSymbs) //#nosec G404 weak rng is fine here
 	}
 }
 
@@ -114,4 +116,20 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+var (
+	randBuf     [64 / 8]byte
+	randBufLock sync.Mutex
+)
+
+// randIntn returns a random number in [0, n); substitute for the deprecated math/rand.Intn
+func randIntn(n int) int {
+	randBufLock.Lock()
+	if _, err := rand.Read(randBuf[:]); err != nil {
+		panic(err)
+	}
+	res := int(binary.LittleEndian.Uint64(randBuf[:]) >> 1 << 1)
+	randBufLock.Unlock()
+	return res % n // if n is small compared to 2^64, the result is close to uniform; not that it matters as this is only used for testing
 }
