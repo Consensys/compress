@@ -16,6 +16,7 @@ type Stream struct {
 	NbSymbs int
 }
 
+// Len is the number of words currently in the stream
 func (s *Stream) Len() int {
 	return len(s.D)
 }
@@ -85,6 +86,8 @@ func (s *Stream) BreakUp(nbSymbs int) Stream {
 	return Stream{d, nbSymbs}
 }
 
+// ToBytes does the same thing as FillBytes, but allocates a new byte slice for the purpose.
+// todo @tabaie across the repo, replace nbBits with a clearer name that is still doesn't mention algebra
 func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
 	res := make([]byte, StreamSerializedSize(len(s.D), bitLen(s.NbSymbs), nbBits))
 	err := s.FillBytes(res, nbBits)
@@ -165,6 +168,10 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	}
 	w.TryAlign()
 	return w.TryError
+}
+
+func (s *Stream) ByteLen(nbBits int) int {
+	return StreamSerializedSize(len(s.D), bitLen(s.NbSymbs), nbBits)
 }
 
 // ReadBytes first reads elements of length nbBits in a byte-aligned manner, and then reads the elements into the stream

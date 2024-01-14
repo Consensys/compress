@@ -345,14 +345,20 @@ func (compressor *Compressor) Stream() compress.Stream {
 	}
 }
 
-// SerializedStreamSize returns the size of the compressed stream, if it were to be serialized by the FillBytes method
-func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
+func (compressor *Compressor) LenStream() int {
 	bitsPerWord := int(compressor.levelSetting)
 	wordsForData := (compressor.outBuf.Len()*8 - int(compressor.nbSkippedBits)) / bitsPerWord
 	if compressor.level == NoCompression {
 		wordsForData = (compressor.inBuf.Len() + headerBitLen/8) * 8 / bitsPerWord
 	}
-	return compress.StreamSerializedSize(wordsForData, bitsPerWord, nbBits)
+	return wordsForData
+}
+
+// SerializedStreamSize returns the size of the compressed stream, if it were to be serialized by the FillBytes method
+// TODO @tabaie remove this in favor of LenStream
+func (compressor *Compressor) SerializedStreamSize(nbBits int) int {
+	bitsPerWord := int(compressor.levelSetting)
+	return compress.StreamSerializedSize(compressor.LenStream(), bitsPerWord, nbBits)
 }
 
 // Compress compresses the given data; if hint is provided, the compressor will try to use it
