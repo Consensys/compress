@@ -48,13 +48,17 @@ func TestFillBytesArithmeticBls12377(t *testing.T) {
 }
 
 func TestChecksumSucceeds(t *testing.T) {
-	d := make([]byte, 65536)
-	rand.Read(d) //#nosec G404 weak rng is fine here
+	d := make([]byte, 1024)
+	for i := 0; i < len(d)/2; i++ {
+		d[2*i] = byte(i/256) + 1
+		d[2*i+1] = byte(i)
+	}
+
 	s, err := NewStream(d, 8)
 	assert.NoError(t, err)
 
 	_, err = s.Checksum(crypto.SHA256.New(), 253)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 }
 
 func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {

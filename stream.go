@@ -64,9 +64,10 @@ func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
 }
 
 func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
-	wordsPerElem := (nbBits + wordNbBits - 1) / wordNbBits
 	wordsForLen := (31 + wordNbBits) / wordNbBits
 	bytesPerElem := (nbBits + 7) / 8
+	wordsPerElemHeadroom := (bytesPerElem*8 - nbBits + wordNbBits - 1) / wordNbBits
+	wordsPerElem := (nbBits+wordNbBits-1)/wordNbBits - wordsPerElemHeadroom
 	nbElems := (wordsForLen + nbWords + wordsPerElem - 1) / wordsPerElem
 	return nbElems * bytesPerElem
 }
