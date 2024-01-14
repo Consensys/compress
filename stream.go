@@ -95,10 +95,9 @@ func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
 }
 
 func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
-	wordsForLen := (31 + wordNbBits) / wordNbBits
 	bytesPerElem := (nbBits + 7) / 8
-	wordsPerElemHeadroom := (bytesPerElem*8 - nbBits + wordNbBits - 1) / wordNbBits
-	wordsPerElem := (nbBits+wordNbBits-1)/wordNbBits - wordsPerElemHeadroom
+	wordsPerElem := (nbBits - 1 + wordNbBits - 1) / wordNbBits
+	wordsForLen := (31 + wordNbBits) / wordNbBits
 	nbElems := (wordsForLen + nbWords + wordsPerElem - 1) / wordsPerElem
 	return nbElems * bytesPerElem
 }
@@ -150,6 +149,8 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	dAt := func(i int) int64 {
 		if i < 0 {
 			return int64(num[i+wordsForNb])
+		} else if i >= len(s.D) {
+			return 0
 		}
 		return int64(s.D[i])
 	}
@@ -160,12 +161,9 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 		w.TryWriteBits(0, leftHeadroomBitsPerElem)
 		for j := 0; j < wordsPerElem; j++ {
 			absJ := i*wordsPerElem + j - wordsForNb
-			if absJ >= len(s.D) {
-				break
-			}
 			w.TryWriteBits(uint64(dAt(absJ)), uint8(bitsPerWord))
-			w.TryAlign()
 		}
+		w.TryAlign()
 	}
 
 	return w.TryError
@@ -191,8 +189,8 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	nbElems := (len(src)*8 + nbBits - 1) / nbBits
 	bytesPerElem := (nbBits + 7) / 8
-	headroomBitsPerElem := uint8(bytesPerElem*8 - bitsPerWord*wordsPerElem)
-	leftHeadroomBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
+	leftPaddingBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
+	rightPaddingBitsPerElem := uint8(bytesPerElem*8-bitsPerWord*wordsPerElem) - leftPaddingBitsPerElem
 
 	w := bitio.NewReader(bytes.NewReader(src))
 	sDLarge := s.D
@@ -202,8 +200,8 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 	}
 
 	for i := 0; i < nbElems && i < (len(s.D)+wordsPerElem-1)/wordsPerElem; i++ {
-		if x := w.TryReadBits(leftHeadroomBitsPerElem); x != 0 {
-			return errors.New("headroom bits not zero")
+		if w.TryReadBits(leftPaddingBitsPerElem) != 0 {
+			return errors.New("left padding not zero")
 		}
 		for j := 0; j < wordsPerElem; j++ {
 			wordI := i*wordsPerElem + j
@@ -227,8 +225,8 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 			}
 			s.D[wordI] = int(w.TryReadBits(uint8(bitsPerWord)))
 		}
-		if x := w.TryReadBits(headroomBitsPerElem - leftHeadroomBitsPerElem); x != 0 {
-			return errors.New("headroom bits not zero")
+		if rightPaddingBitsPerElem != 0 && w.TryReadBits(rightPaddingBitsPerElem) != 0 {
+			return errors.New("right padding not zero")
 		}
 	}
 
