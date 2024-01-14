@@ -30,16 +30,20 @@ func (s *Stream) At(i int) int {
 }
 
 func NewStream(in []byte, bitsPerSymbol uint8) (Stream, error) {
+	var s Stream
+	err := s.ReadData(in, bitsPerSymbol)
+	return s, err
+}
+
+// ReadData reads a stream from a byte slice, with the number of bits per symbol specified. As opposed to ReadBytes, it attempts to exhaust the input.
+func (s *Stream) ReadData(in []byte, bitsPerSymbol uint8) error {
+
 	d := make([]int, len(in)*8/int(bitsPerSymbol))
 	r := bitio.NewReader(bytes.NewReader(in))
 	for i := range d {
-		if n, err := r.ReadBits(bitsPerSymbol); err != nil {
-			return Stream{}, err
-		} else {
-			d[i] = int(n)
-		}
+		d[i] = int(r.TryReadBits(bitsPerSymbol))
 	}
-	return Stream{d, 1 << int(bitsPerSymbol)}, nil
+	return r.TryError
 }
 
 func (s *Stream) BreakUp(nbSymbs int) Stream {
@@ -277,7 +281,7 @@ func (s *Stream) ContentToBytes() []byte {
 	return bb.Bytes()
 }
 
-// Concat concatenates the streams into the current stream
+// Concat replaces the content of the current stream with the concatenation of the given streams.
 func (s *Stream) Concat(a ...Stream) error {
 	if len(a) == 0 {
 		s.D = nil
@@ -295,6 +299,7 @@ func (s *Stream) Concat(a ...Stream) error {
 	if cap(s.D) < _len {
 		s.D = make([]int, 0, _len)
 	}
+	s.D = s.D[:0]
 	for _, v := range a {
 		s.D = append(s.D, v.D...)
 	}
