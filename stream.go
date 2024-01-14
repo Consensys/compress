@@ -316,16 +316,24 @@ func (s *Stream) Concat(a ...Stream) error {
 	_len := 0
 	for _, v := range a {
 		_len += len(v.D)
-		if v.NbSymbs != s.NbSymbs {
-			return errors.New("streams must have the same number of symbols")
-		}
+
 	}
 	if cap(s.D) < _len {
 		s.D = make([]int, 0, _len)
 	}
 	s.D = s.D[:0]
 	for _, v := range a {
-		s.D = append(s.D, v.D...)
+		if err := s.Append(v); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func (s *Stream) Append(a Stream) error {
+	if a.NbSymbs != s.NbSymbs {
+		return errors.New("streams must have the same number of symbols")
+	}
+	s.D = append(s.D, a.D...)
 	return nil
 }
