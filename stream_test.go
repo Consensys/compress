@@ -124,12 +124,16 @@ var (
 )
 
 // randIntn returns a random number in [0, n); substitute for the deprecated math/rand.Intn
+// panics if n <= 0
 func randIntn(n int) int {
+	if n <= 0 {
+		panic("randIntn: n <= 0")
+	}
 	randBufLock.Lock()
 	if _, err := rand.Read(randBuf[:]); err != nil {
 		panic(err)
 	}
-	res := int(binary.LittleEndian.Uint64(randBuf[:]) >> 1 << 1)
+	x := binary.LittleEndian.Uint64(randBuf[:])
 	randBufLock.Unlock()
-	return res % n // if n is small compared to 2^64, the result is close to uniform; not that it matters as this is only used for testing
+	return int(x % uint64(n)) // if n is small compared to 2^64, the result is close to uniform; not that it matters as this is only used for testing
 }
