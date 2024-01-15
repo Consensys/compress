@@ -17,25 +17,15 @@ import (
 )
 
 func TestFillBytesRoundTrip(t *testing.T) {
-	//d := make([]int, 2)
-	var D [85]int
-	b := make([]byte, 100000000)
+	var D [100]int
+	b := make([]byte, 100000)
 
-	for l := 85; l <= len(D); l++ {
-		d := D[:l]
-		fmt.Println("len", l)
-		for i := 0; i < 1000; i++ {
-			if i%100 == 0 {
-				fmt.Println("\t", i)
-			}
-
-			var s Stream
-			//s.D = d[:randIntn(len(d))+1]       //#nosec G404 weak rng is fine here
-			s.D = d
-			s.NbSymbs = 1 << (randIntn(2) + 1) //#nosec G404 weak rng is fine here
-			fieldSize := 3 + randIntn(9)       //#nosec G404 weak rng is fine here
-			testFillBytes(t, b, fieldSize, s)
-		}
+	for i := 0; i < 100000; i++ {
+		var s Stream
+		s.D = D[:randIntn(len(D))+1]       //#nosec G404 weak rng is fine here
+		s.NbSymbs = 1 << (randIntn(2) + 1) //#nosec G404 weak rng is fine here
+		fieldSize := 3 + randIntn(9)       //#nosec G404 weak rng is fine here
+		testFillBytes(t, b, fieldSize, s)
 	}
 	l.f.Close()
 }
