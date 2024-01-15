@@ -96,9 +96,10 @@ func (s *Stream) ToBytes(nbBits int) ([]byte, error) {
 
 func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
 	bytesPerElem := (nbBits + 7) / 8
-	wordsPerElem := (nbBits - 1 + wordNbBits - 1) / wordNbBits
+	wordsPerElem := (nbBits - 1) / wordNbBits
 	wordsForLen := (31 + wordNbBits) / wordNbBits
 	nbElems := (wordsForLen + nbWords + wordsPerElem - 1) / wordsPerElem
+	//fmt.Println("on input", nbWords, "words of", wordNbBits, "bits, we need", nbElems, "elements of", nbBits, "bits, or", bytesPerElem, "bytes per element")
 	return nbElems * bytesPerElem
 }
 
@@ -128,7 +129,8 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	wordsPerElem := (nbBits - 1) / bitsPerWord
 	nbElems := (len(s.D) + wordsForNb + wordsPerElem - 1) / wordsPerElem
 	bytesPerElem := (nbBits + 7) / 8
-	leftHeadroomBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
+	leftPaddingBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
+	rightPaddingBitsPerElem := uint8(bytesPerElem*8-bitsPerWord*wordsPerElem) - leftPaddingBitsPerElem
 
 	if len(dst) < StreamSerializedSize(len(s.D), bitsPerWord, nbBits) {
 		return errors.New("not enough room in dst")
@@ -159,15 +161,20 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 	w := bitio.NewWriter(&bw)
 
 	for i := 0; i < nbElems; i++ {
-		w.TryWriteBits(0, leftHeadroomBitsPerElem)
+		w.TryWriteBits(0, leftPaddingBitsPerElem)
 		for j := 0; j < wordsPerElem; j++ {
 			absJ := i*wordsPerElem + j - wordsForNb
 			w.TryWriteBits(uint64(dAt(absJ)), uint8(bitsPerWord))
 		}
-		w.TryAlign()
+		w.TryWriteBits(0, rightPaddingBitsPerElem)
+
+		if w.TryAlign() != 0 { //TODO remove
+			return errors.New("alignment error")
+		}
 	}
 
 	//zero the rest of the slice
+	//optional as far as ReadBytes is concerned
 	for i := bw.n; i < len(dst); i++ {
 		dst[i] = 0
 	}
@@ -180,6 +187,7 @@ func (s *Stream) ByteLen(nbBits int) int {
 }
 
 // ReadBytes first reads elements of length nbBits in a byte-aligned manner, and then reads the elements into the stream
+// it will not attempt to read past the specified number of words, meaning it is robust to "dirty" buffers
 func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 	bitsPerWord := bitLen(s.NbSymbs)
 
@@ -193,54 +201,50 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 
 	wordsForNb := (31 + bitsPerWord) / bitsPerWord
 	wordsPerElem := (nbBits - 1) / bitsPerWord
-	nbElems := (len(src)*8 + nbBits - 1) / nbBits
+	nbWords := wordsForNb
+	nbElems := (nbWords + wordsPerElem - 1) / wordsPerElem
 	bytesPerElem := (nbBits + 7) / 8
 	leftPaddingBitsPerElem := uint8(bytesPerElem*8 - nbBits + 1)
 	rightPaddingBitsPerElem := uint8(bytesPerElem*8-bitsPerWord*wordsPerElem) - leftPaddingBitsPerElem
 
-	w := bitio.NewReader(bytes.NewReader(src))
-	sDLarge := s.D
-	if len(s.D) < wordsForNb {
-		s.D = make([]int, wordsForNb)
-		sDLarge = s.D
-	}
+	num := make([]int, wordsForNb)
 
-	for i := 0; i < nbElems && i < (len(s.D)+wordsPerElem-1)/wordsPerElem; i++ {
+	w := bitio.NewReader(bytes.NewReader(src))
+
+	// todo uninterleave the reading of the number of words and the words themselves for cleaner code and to enable the ignoring of input past the final word
+	for i := 0; i < nbElems; i++ {
 		if w.TryReadBits(leftPaddingBitsPerElem) != 0 {
 			return errors.New("left padding not zero")
 		}
 		for j := 0; j < wordsPerElem; j++ {
-			wordI := i*wordsPerElem + j
+			wordI := i*wordsPerElem + j - wordsForNb
 
-			if wordI == wordsForNb {
-				_len := 0
-				for k := 0; k < wordsForNb; k++ {
-					_len *= s.NbSymbs
-					_len += s.D[k]
+			if wordI == nbWords {
+				return w.TryError
+			}
+
+			v := int(w.TryReadBits(uint8(bitsPerWord)))
+			if wordI < 0 {
+				num[wordI+wordsForNb] = v
+				if wordI == -1 { // just finished reading the number of words
+					nbWords = 0
+					for k := range num {
+						nbWords *= s.NbSymbs
+						nbWords += num[k]
+					}
+					s.resize(nbWords)
+					nbElems = (nbWords + wordsForNb + wordsPerElem - 1) / wordsPerElem
 				}
-				s.D = sDLarge
-				s.resize(_len)
+			} else {
+				s.D[wordI] = v
 			}
-
-			if wordI >= wordsForNb {
-				wordI -= wordsForNb
-			}
-
-			if wordI >= len(s.D) {
-				continue
-			}
-			s.D[wordI] = int(w.TryReadBits(uint8(bitsPerWord)))
 		}
 		if rightPaddingBitsPerElem != 0 && w.TryReadBits(rightPaddingBitsPerElem) != 0 {
 			return errors.New("right padding not zero")
 		}
 	}
 
-	if nbElems < (len(s.D)+wordsForNb+wordsPerElem-1)/wordsPerElem {
-		return errors.New("insufficient bytes")
-	}
-
-	return w.TryError
+	return w.TryError // this is reached if the last element is perfectly filled with words, or if src is too short
 }
 
 func (s *Stream) resize(_len int) {

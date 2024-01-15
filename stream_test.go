@@ -18,18 +18,22 @@ import (
 
 func TestFillBytesRoundTrip(t *testing.T) {
 	//d := make([]int, 2)
-	var D [100]int
-	b := make([]byte, 100)
+	var D [85]int
+	b := make([]byte, 100000000)
 
-	for l := 23; l <= len(D); l++ {
+	for l := 85; l <= len(D); l++ {
 		d := D[:l]
 		fmt.Println("len", l)
-		for i := 0; i < 100000; i++ {
+		for i := 0; i < 1000; i++ {
+			if i%100 == 0 {
+				fmt.Println("\t", i)
+			}
+
 			var s Stream
 			//s.D = d[:randIntn(len(d))+1]       //#nosec G404 weak rng is fine here
 			s.D = d
-			s.NbSymbs = 1 << (randIntn(9) + 1) //#nosec G404 weak rng is fine here
-			fieldSize := 248 + randIntn(9)     //#nosec G404 weak rng is fine here
+			s.NbSymbs = 1 << (randIntn(2) + 1) //#nosec G404 weak rng is fine here
+			fieldSize := 3 + randIntn(9)       //#nosec G404 weak rng is fine here
 			testFillBytes(t, b, fieldSize, s)
 		}
 	}
@@ -149,24 +153,24 @@ func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
 		//first = false
 	}
 
-	l.log(nbBits, s)
+	//l.log(nbBits, s)
 	//fmt.Println("nbBits", nbBits, "nbSymbs", s.NbSymbs, "slice", s.D)
 	//fmt.Printf("testFillBytes(t, buffer[:], %d, Stream{NbSymbs: %d, D: []int{%d}})\n", nbBits, s.NbSymbs, s.D[0])
-	require.NoError(t, s.FillBytes(buffer, nbBits))
 
 	sBack := Stream{NbSymbs: s.NbSymbs}
+
+	// todo reintroduce
+	require.NoError(t, s.FillBytes(buffer, nbBits))
+
 	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
 	require.Equal(t, s, sBack, "fill bytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
 
-	/*	todo reintroduce
-		// test ToBytes
-		buffer, err := s.ToBytes(nbBits)
-		require.NoError(t, err)
+	// test ToBytes
+	buffer, err := s.ToBytes(nbBits)
+	require.NoError(t, err, "failure at length %d", len(s.D))
 
-		require.NoError(t, sBack.ReadBytes(buffer, nbBits))
-		require.Equal(t, s, sBack, "ToBytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
-
-	*/
+	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
+	require.Equal(t, s, sBack, "ToBytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
 }
 
 func fillRandom(s Stream) {
@@ -204,9 +208,20 @@ func randIntn(n int) int {
 
 func TestPaddingBug(t *testing.T) {
 	var buffer [2000]byte
-	/*testFillBytes(t, buffer[:], 249, Stream{NbSymbs: 512, D: []int{71}})
-	testFillBytes(t, buffer[:], 250, Stream{NbSymbs: 32, D: []int{17}})*/
+
+	testFillBytes(t, buffer[:], 4, Stream{NbSymbs: 4, D: []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}})
+
+	testFillBytes(t, buffer[:], 3, Stream{NbSymbs: 4, D: []int{3, 3, 1, 0, 3, 2, 3, 3, 1, 3, 1, 2, 0, 3, 0, 0, 0, 1, 0, 2, 2, 1, 0, 2, 3, 0, 3, 2, 1, 2, 0, 3, 2, 3, 0, 1, 2, 0, 0, 1, 3, 1, 0, 3, 0, 3, 1, 2, 3, 3, 1, 2, 2, 0, 0, 2, 2, 2, 2, 3, 3, 0, 0, 0, 3, 1, 2, 2, 0, 0, 1, 2, 1, 1, 3, 1, 2, 1, 3, 3, 3, 2, 1, 0, 2}})
+
+	testFillBytes(t, buffer[:], 6, Stream{NbSymbs: 4, D: []int{2}})
+
+	testFillBytes(t, buffer[:], 249, Stream{NbSymbs: 512, D: []int{71}})
+	testFillBytes(t, buffer[:], 250, Stream{NbSymbs: 32, D: []int{17}})
 
 	testFillBytes(t, buffer[:], 250, Stream{NbSymbs: 512, D: []int{312, 224, 9, 27, 475, 146, 402, 227, 8, 46, 56, 53, 309, 216, 387, 219, 329, 502, 433, 204, 254, 82, 433}})
 	testFillBytes(t, buffer[:], 252, Stream{NbSymbs: 512, D: []int{372, 64, 279, 24, 122, 65, 78, 101, 130, 483, 313, 475, 325, 147, 67, 335, 229, 401, 87, 222, 277, 213, 505}})
+
+	testFillBytes(t, buffer[:], 252, Stream{NbSymbs: 512, D: []int{461, 93, 293, 118, 74, 249, 387, 259, 176, 371, 495, 18, 237, 32, 36, 430, 486, 392, 201, 359, 443, 298, 425, 6}})
+
+	testFillBytes(t, buffer[:], 4, Stream{NbSymbs: 4, D: []int{2}})
 }
