@@ -60,6 +60,17 @@ func TestChecksumSucceeds(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestWriteNumRoundTrip(t *testing.T) {
+	s := Stream{NbSymbs: 16}
+	for i := 0; i < 1000; i++ {
+		s.D = s.D[:0]
+		n := randIntn(65536)
+		s.WriteNum(n, 4)
+		nBack := s.ReadNum(0, 4)
+		assert.Equal(t, n, nBack)
+	}
+}
+
 func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 	modulusByteLen := (modulus.BitLen() + 7) / 8
 	n1, n2 := randIntn(1000)+1, randIntn(1000)+1 //#nosec G404 weak rng is fine here

@@ -54,17 +54,33 @@ func (s *Stream) New(in []byte, bitsPerSymbol uint8) error {
 // Write in accordance with the io.Writer interface
 // todo api @tabaie reconcile which perspective the words "read" and "write" are used from. this one is in contrast with that of ReadBytes
 func (s *Stream) Write(p []byte) (n int, err error) {
+
 	bitsPerSymb := uint8(bitLen(s.NbSymbs))
 	toRead := len(p) * 8 / int(bitsPerSymb)
 	r := bitio.NewReader(bytes.NewReader(p))
 	for i := 0; i < toRead; i++ {
-		var x uint64
-		if x, err = r.ReadBits(bitsPerSymb); err != nil {
+		var v uint64
+		if v, err = r.ReadBits(bitsPerSymb); err != nil {
 			return (i*int(bitsPerSymb) + 7) / 8, err // counting the last partial byte
 		}
-		s.D = append(s.D, int(x))
+		s.D = append(s.D, int(v))
 	}
 	return len(p), nil // counting the last partial byte
+}
+
+// Read in accordance with the io.Reader interface
+func (s *Stream) Read(p []byte) (n int, err error) {
+	bitsPerSymb := uint8(bitLen(s.NbSymbs))
+	bw := bytesWriter{b: p}
+	w := bitio.NewWriter(&bw)
+	toRead := len(p) * 8 / int(bitsPerSymb)
+	for i := 0; i < toRead; i++ {
+		if err = w.WriteBits(uint64(s.D[i]), bitsPerSymb); err != nil {
+			return (i*int(bitsPerSymb) + 7) / 8, err // counting the last partial byte
+		}
+	}
+	s.D = s.D[toRead:]
+	return len(p), w.Close() // counting the last partial byte
 }
 
 func (s *Stream) Reset() {
@@ -273,24 +289,40 @@ func (s *Stream) Checksum(hsh hash.Hash, fieldBits int) ([]byte, error) {
 	return hsh.Sum(nil), err
 }
 
+// WriteNum appends r in radix NbSymbs over nbWords digits, big endian
 func (s *Stream) WriteNum(r int, nbWords int) *Stream {
-	for i := 0; i < nbWords; i++ {
-		s.D = append(s.D, r%s.NbSymbs)
+	b := make([]int, nbWords)
+	for i := 1; i <= nbWords; i++ {
+		b[nbWords-i] = r % s.NbSymbs
 		r /= s.NbSymbs
 	}
 	if r != 0 {
 		panic("overflow")
 	}
+	s.D = append(s.D, b...)
 	return s
 }
 
+// ReadNum reads a number non-destructively in radix NbSymbs over nbWords digits, big endian
 func (s *Stream) ReadNum(start, nbWords int) int {
 	res := 0
-	for j := nbWords - 1; j >= 0; j-- {
+	for j := 0; j < nbWords; j++ {
 		res *= s.NbSymbs
 		res += s.D[start+j]
 	}
 	return res
+}
+
+func (s *Stream) WriteBits(r uint64, nbBits uint8) {
+	if r >= 1<<63 || nbBits >= 64 {
+		panic("up to 63 bits supported")
+	}
+	bl := bitLen(s.NbSymbs)
+	nbWords := int(nbBits) / bl
+	if nbWords*bl != int(nbBits) {
+		panic("number of output bits must be divisible by the stream's word length") // TODO or maybe just take the ceiling
+	}
+	s.WriteNum(int(r), nbWords)
 }
 
 func bitLen(n int) int {
