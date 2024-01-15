@@ -103,16 +103,16 @@ func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
 }
 
 type bytesWriter struct {
-	i int
+	n int
 	b []byte
 }
 
 func (b *bytesWriter) Write(p []byte) (n int, err error) {
-	if b.i+len(p) > len(b.b) {
+	if b.n+len(p) > len(b.b) {
 		return 0, errors.New("not enough room in dst")
 	}
-	copy(b.b[b.i:], p)
-	b.i += len(p)
+	copy(b.b[b.n:], p)
+	b.n += len(p)
 	return len(p), nil
 }
 
@@ -155,7 +155,8 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 		return int64(s.D[i])
 	}
 
-	w := bitio.NewWriter(&bytesWriter{0, dst})
+	bw := bytesWriter{0, dst}
+	w := bitio.NewWriter(&bw)
 
 	for i := 0; i < nbElems; i++ {
 		w.TryWriteBits(0, leftHeadroomBitsPerElem)
@@ -164,6 +165,11 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 			w.TryWriteBits(uint64(dAt(absJ)), uint8(bitsPerWord))
 		}
 		w.TryAlign()
+	}
+
+	//zero the rest of the slice
+	for i := bw.n; i < len(dst); i++ {
+		dst[i] = 0
 	}
 
 	return w.TryError
