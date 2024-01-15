@@ -5,11 +5,8 @@ import (
 	"crypto"
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"github.com/stretchr/testify/require"
 	"math/big"
-	"os"
-	"strconv"
 	"sync"
 	"testing"
 
@@ -27,7 +24,6 @@ func TestFillBytesRoundTrip(t *testing.T) {
 		fieldSize := 3 + randIntn(9)       //#nosec G404 weak rng is fine here
 		testFillBytes(t, b, fieldSize, s)
 	}
-	l.f.Close()
 }
 
 func TestFillBytesNotEnoughSpace(t *testing.T) {
@@ -93,63 +89,11 @@ func testFillBytesArithmetic(t *testing.T, modulus *big.Int) {
 
 }
 
-type logger struct {
-	f *os.File
-}
-
-var l = newLogger()
-
-func newLogger() logger {
-	f, err := os.OpenFile("log.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		panic(err)
-	}
-	return logger{f}
-}
-
-func (l logger) log(nbBits int, s Stream) {
-	b := fmt.Sprintf("testFillBytes(t, buffer[:], %d, Stream{NbSymbs: %d, D: []int{", nbBits, s.NbSymbs)
-	if _, err := l.f.WriteString(b); err != nil {
-		panic(err)
-	}
-	for i := range s.D {
-		b = strconv.Itoa(s.D[i])
-		if i != len(s.D)-1 {
-			b += ", "
-		}
-		if _, err := l.f.WriteString(b); err != nil {
-			panic(err)
-		}
-	}
-	if _, err := l.f.WriteString("}})\n"); err != nil {
-		panic(err)
-	}
-}
-
-var first = true
-
 func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
 
-	// todo remove
-	/*s = Stream{
-		D:       []int{508},
-		NbSymbs: 512,
-	}
-	nbBits = 255*/
-
-	if first {
-		//s.D = []int{0, 0, 0}
-		//fillRandom(s) // todo reintroduce
-		//first = false
-	}
-
-	//l.log(nbBits, s)
-	//fmt.Println("nbBits", nbBits, "nbSymbs", s.NbSymbs, "slice", s.D)
-	//fmt.Printf("testFillBytes(t, buffer[:], %d, Stream{NbSymbs: %d, D: []int{%d}})\n", nbBits, s.NbSymbs, s.D[0])
-
+	fillRandom(s)
 	sBack := Stream{NbSymbs: s.NbSymbs}
 
-	// todo reintroduce
 	require.NoError(t, s.FillBytes(buffer, nbBits))
 
 	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
@@ -157,7 +101,7 @@ func testFillBytes(t *testing.T, buffer []byte, nbBits int, s Stream) {
 
 	// test ToBytes
 	buffer, err := s.ToBytes(nbBits)
-	require.NoError(t, err, "failure at length %d", len(s.D))
+	require.NoError(t, err, "ToBytes failure at length %d", len(s.D))
 
 	require.NoError(t, sBack.ReadBytes(buffer, nbBits))
 	require.Equal(t, s, sBack, "ToBytes round trip failed for nbSymbs %d, size %d and field size %d", s.NbSymbs, len(s.D), nbBits)
@@ -196,7 +140,7 @@ func randIntn(n int) int {
 	return int(x % uint64(n)) // if n is small compared to 2^64, the result is close to uniform; not that it matters as this is only used for testing
 }
 
-func TestPaddingBug(t *testing.T) {
+func TestTrickyEdges(t *testing.T) {
 	var buffer [2000]byte
 
 	testFillBytes(t, buffer[:], 4, Stream{NbSymbs: 4, D: []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}})

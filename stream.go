@@ -99,7 +99,6 @@ func StreamSerializedSize(nbWords, wordNbBits, nbBits int) int {
 	wordsPerElem := (nbBits - 1) / wordNbBits
 	wordsForLen := (31 + wordNbBits) / wordNbBits
 	nbElems := (wordsForLen + nbWords + wordsPerElem - 1) / wordsPerElem
-	//fmt.Println("on input", nbWords, "words of", wordNbBits, "bits, we need", nbElems, "elements of", nbBits, "bits, or", bytesPerElem, "bytes per element")
 	return nbElems * bytesPerElem
 }
 
@@ -168,7 +167,7 @@ func (s *Stream) FillBytes(dst []byte, nbBits int) error {
 		}
 		w.TryWriteBits(0, rightPaddingBitsPerElem)
 
-		if w.TryAlign() != 0 { //TODO remove
+		if w.TryAlign() != 0 { //TODO redundant check if the algorithm works correctly. remove eventually
 			return errors.New("alignment error")
 		}
 	}
@@ -211,7 +210,6 @@ func (s *Stream) ReadBytes(src []byte, nbBits int) error {
 
 	w := bitio.NewReader(bytes.NewReader(src))
 
-	// todo uninterleave the reading of the number of words and the words themselves for cleaner code and to enable the ignoring of input past the final word
 	for i := 0; i < nbElems; i++ {
 		if w.TryReadBits(leftPaddingBitsPerElem) != 0 {
 			return errors.New("left padding not zero")
