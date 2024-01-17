@@ -120,12 +120,15 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 	inI := 0
 
 	emitLiteralIfNecessary := func() {
+		if copyStart == -1 {
+			return
+		}
 		res = append(res, CompressionPhrase{
 			Type:              0,
 			Length:            out.Len() - copyStart,
 			ReferenceAddress:  copyStart,
-			StartDecompressed: inI,
-			StartCompressed:   copyStart,
+			StartDecompressed: copyStart,
+			StartCompressed:   inI,
 			Content:           out.Bytes()[copyStart:],
 		})
 		copyStart = -1
@@ -133,7 +136,7 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 	}
 
 	emitRef := func(b *backref) {
-		addr := out.Len() - b.address
+		addr := out.Len() - b.length - b.address // this happens post writing out the backref
 		if b.bType == dictBackRefType {
 			addr = b.address
 		}
@@ -143,7 +146,7 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 			ReferenceAddress:  addr,
 			StartDecompressed: out.Len() - b.length,
 			StartCompressed:   inI,
-			Content:           nil,
+			Content:           out.Bytes()[out.Len()-b.length:],
 		})
 		inI += int(b.bType.NbBitsBackRef)
 	}
@@ -168,11 +171,13 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 			for i := 0; i < bLong.length; i++ {
 				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
 			}
+			emitRef(&bLong)
 		case SymbolDict:
 			emitLiteralIfNecessary()
 			// dict back ref
 			bDict.readFrom(in)
 			out.Write(dict[bDict.address : bDict.address+bDict.length])
+			emitRef(&bDict)
 		default:
 			if copyStart == -1 {
 				copyStart = out.Len()
@@ -184,7 +189,7 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 	return res
 }
 
-func (c CompressionPhrases) ToCsv() string {
+func (c CompressionPhrases) ToCsv() []byte {
 	var b bytes.Buffer
 	b.WriteString("type,length,start_decompressed (bytes),start_compressed (bits),reference_address,content (hex)\n")
 	for _, phrase := range c {
@@ -213,5 +218,5 @@ func (c CompressionPhrases) ToCsv() string {
 		b.WriteString(hex.EncodeToString(phrase.Content))
 		b.WriteString("\n")
 	}
-	return b.String()
+	return b.Bytes()
 }
