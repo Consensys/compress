@@ -2,11 +2,10 @@ package lzss
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
-	"io"
-
-	"github.com/consensys/compress"
 	"github.com/icza/bitio"
+	"strconv"
 )
 
 // Decompress decompresses the given data using the given dictionary
@@ -70,60 +69,158 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	return out.Bytes(), nil
 }
 
-// ReadIntoStream reads the compressed data into a stream
-// the stream is not padded with zeros as one obtained by a naive call to compress.NewStream may be
-// Deprecated: use Compressor.Stream() instead
-func ReadIntoStream(data, dict []byte, level Level) (compress.Stream, error) {
+type CompressionPhrase struct {
+	Type              byte
+	Length            int
+	ReferenceAddress  int
+	StartDecompressed int
+	StartCompressed   int
+	Content           []byte
+}
 
-	out, err := compress.NewStream(data, uint8(level))
-	if err != nil {
-		return out, err
-	}
+type CompressionPhrases []CompressionPhrase
 
-	// now find out how much of the stream is padded zeros and remove them
-	in := bitio.NewReader(bytes.NewReader(data))
-	dict = AugmentDict(dict)
+func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
+	in := bitio.NewReader(bytes.NewReader(c))
+
+	// parse header
 	var header Header
-	if _, err := header.ReadFrom(in); err != nil {
-		return out, err
+	sizeHeader, err := header.ReadFrom(in)
+	if err != nil {
+		return nil, err
 	}
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), level)
-
-	// the main job of this function is to compute the right value for outLenBits
-	// so we can remove the extra zeros at the end of out
-	outLenBits := headerBitLen
+	if header.Version != Version {
+		panic("unsupported compressor version")
+	}
 	if header.Level == NoCompression {
-		return out, nil
-	}
-	if header.Level != level {
-		return out, errors.New("compression mode mismatch")
+		return CompressionPhrases{{
+			Type:              0,
+			Length:            len(c) - int(sizeHeader),
+			ReferenceAddress:  0,
+			StartDecompressed: 0,
+			StartCompressed:   0,
+			Content:           c[sizeHeader:],
+		}}, nil
 	}
 
+	var res CompressionPhrases
+
+	// init dict and backref types
+	dict = AugmentDict(dict)
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
+
+	bDict := backref{bType: dictBackRefType}
+	bShort := backref{bType: shortBackRefType}
+	bLong := backref{bType: longBackRefType}
+
+	var out bytes.Buffer
+	out.Grow(len(c) * 7)
+
+	// the decompressor considers the direct copying of each byte of the input its own event.
+	// that's inconvenient to the human eye, so we group all consecutive literal copies into the same event
+	// literalCopyStart is the index of the first byte of the literal copy in the DECOMPRESSED stream.
+	// it is -1 if we are not currently copying a literal
+	literalCopyStart := -1
+	inI := 0
+
+	emitLiteralIfNecessary := func() {
+		if literalCopyStart == -1 {
+			return
+		}
+		res = append(res, CompressionPhrase{
+			Type:              0,
+			Length:            out.Len() - literalCopyStart,
+			ReferenceAddress:  literalCopyStart,
+			StartDecompressed: literalCopyStart,
+			StartCompressed:   inI,
+			Content:           out.Bytes()[literalCopyStart:],
+		})
+		inI += (out.Len() - literalCopyStart) * 8
+		literalCopyStart = -1
+	}
+
+	emitRef := func(b *backref) {
+		addr := out.Len() - b.length - b.address // this happens post writing out the backref
+		if b.bType == dictBackRefType {
+			addr = b.address
+		}
+		res = append(res, CompressionPhrase{
+			Type:              b.bType.Delimiter,
+			Length:            b.length,
+			ReferenceAddress:  addr,
+			StartDecompressed: out.Len() - b.length,
+			StartCompressed:   inI,
+			Content:           out.Bytes()[out.Len()-b.length:],
+		})
+		inI += int(b.bType.NbBitsBackRef)
+	}
+
+	// read byte per byte; if it's a backref, write the corresponding bytes
+	// otherwise, write the byte as is
 	s := in.TryReadByte()
 	for in.TryError == nil {
-		var b *BackrefType
 		switch s {
 		case SymbolShort:
-			b = &shortBackRefType
+			emitLiteralIfNecessary()
+			// short back ref
+			bShort.readFrom(in)
+			for i := 0; i < bShort.length; i++ {
+				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
+			}
+			emitRef(&bShort)
 		case SymbolLong:
-			b = &longBackRefType
+			emitLiteralIfNecessary()
+			// long back ref
+			bLong.readFrom(in)
+			for i := 0; i < bLong.length; i++ {
+				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
+			}
+			emitRef(&bLong)
 		case SymbolDict:
-			b = &dictBackRefType
-		}
-		if b == nil {
-			outLenBits += 8
-		} else {
-			in.TryReadBits(b.NbBitsBackRef - 8)
-			outLenBits += int(b.NbBitsBackRef)
+			emitLiteralIfNecessary()
+			// dict back ref
+			bDict.readFrom(in)
+			out.Write(dict[bDict.address : bDict.address+bDict.length])
+			emitRef(&bDict)
+		default:
+			if literalCopyStart == -1 {
+				literalCopyStart = out.Len()
+			}
+			out.WriteByte(s)
 		}
 		s = in.TryReadByte()
 	}
-	if in.TryError != io.EOF {
-		return out, in.TryError
-	}
+	return res, nil
+}
 
-	return compress.Stream{
-		D:       out.D[:outLenBits/int(level)],
-		NbSymbs: out.NbSymbs,
-	}, nil
+func (c CompressionPhrases) ToCSV() []byte {
+	var b bytes.Buffer
+	b.WriteString("type,length,start_decompressed (bytes),start_compressed (bits),reference_address,content (hex)\n")
+	for _, phrase := range c {
+		switch phrase.Type {
+		case SymbolShort:
+			b.WriteString("short,")
+		case SymbolLong:
+			b.WriteString("long,")
+		case SymbolDict:
+			b.WriteString("dict,")
+		case 0:
+			b.WriteString("literal,")
+		default:
+			panic("unknown phrase type")
+		}
+
+		b.WriteString(strconv.Itoa(phrase.Length))
+		b.WriteString(",")
+
+		b.WriteString(strconv.Itoa(phrase.StartDecompressed))
+		b.WriteString(",")
+		b.WriteString(strconv.Itoa(phrase.StartCompressed))
+		b.WriteString(",")
+		b.WriteString(strconv.Itoa(phrase.ReferenceAddress))
+		b.WriteString(",")
+		b.WriteString(hex.EncodeToString(phrase.Content))
+		b.WriteString("\n")
+	}
+	return b.Bytes()
 }
