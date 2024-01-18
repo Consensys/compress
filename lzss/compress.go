@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math/bits"
 
-	"github.com/consensys/compress"
-
 	"github.com/consensys/compress/lzss/internal/suffixarray"
 	"github.com/icza/bitio"
 )
@@ -320,24 +318,6 @@ func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 // Bytes returns the compressed data
 func (compressor *Compressor) Bytes() []byte {
 	return compressor.outBuf.Bytes()
-}
-
-// Stream returns a stream of the compressed data
-func (compressor *Compressor) Stream() compress.Stream {
-	wordNbBits := uint8(compressor.level)
-	if wordNbBits == 0 {
-		wordNbBits = 8
-	}
-
-	res, err := compress.NewStream(compressor.outBuf.Bytes(), wordNbBits)
-	if err != nil {
-		panic(err)
-	}
-
-	return compress.Stream{
-		D:       res.D[:(res.Len()-int(compressor.lastNbSkippedBits))/int(wordNbBits)],
-		NbSymbs: res.NbSymbs,
-	}
 }
 
 // Compress compresses the given data; if hint is provided, the compressor will try to use it
