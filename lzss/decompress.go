@@ -80,14 +80,14 @@ type CompressionPhrase struct {
 
 type CompressionPhrases []CompressionPhrase
 
-func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
+func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 	in := bitio.NewReader(bytes.NewReader(c))
 
 	// parse header
 	var header Header
 	sizeHeader, err := header.ReadFrom(in)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	if header.Version != Version {
 		panic("unsupported compressor version")
@@ -100,7 +100,7 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 			StartDecompressed: 0,
 			StartCompressed:   0,
 			Content:           c[sizeHeader:],
-		}}
+		}}, nil
 	}
 
 	var res CompressionPhrases
@@ -116,23 +116,27 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 	var out bytes.Buffer
 	out.Grow(len(c) * 7)
 
-	copyStart := -1
+	// the decompressor considers the direct copying of each byte of the input its own event.
+	// that's inconvenient to the human eye, so we group all consecutive literal copies into the same event
+	// literalCopyStart is the index of the first byte of the literal copy in the DECOMPRESSED stream.
+	// it is -1 if we are not currently copying a literal
+	literalCopyStart := -1
 	inI := 0
 
 	emitLiteralIfNecessary := func() {
-		if copyStart == -1 {
+		if literalCopyStart == -1 {
 			return
 		}
 		res = append(res, CompressionPhrase{
 			Type:              0,
-			Length:            out.Len() - copyStart,
-			ReferenceAddress:  copyStart,
-			StartDecompressed: copyStart,
+			Length:            out.Len() - literalCopyStart,
+			ReferenceAddress:  literalCopyStart,
+			StartDecompressed: literalCopyStart,
 			StartCompressed:   inI,
-			Content:           out.Bytes()[copyStart:],
+			Content:           out.Bytes()[literalCopyStart:],
 		})
-		inI += (out.Len() - copyStart) * 8
-		copyStart = -1
+		inI += (out.Len() - literalCopyStart) * 8
+		literalCopyStart = -1
 	}
 
 	emitRef := func(b *backref) {
@@ -179,17 +183,17 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 			out.Write(dict[bDict.address : bDict.address+bDict.length])
 			emitRef(&bDict)
 		default:
-			if copyStart == -1 {
-				copyStart = out.Len()
+			if literalCopyStart == -1 {
+				literalCopyStart = out.Len()
 			}
 			out.WriteByte(s)
 		}
 		s = in.TryReadByte()
 	}
-	return res
+	return res, nil
 }
 
-func (c CompressionPhrases) ToCsv() []byte {
+func (c CompressionPhrases) ToCSV() []byte {
 	var b bytes.Buffer
 	b.WriteString("type,length,start_decompressed (bytes),start_compressed (bits),reference_address,content (hex)\n")
 	for _, phrase := range c {
