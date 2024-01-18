@@ -131,8 +131,8 @@ func CompressedStreamInfo(c, dict []byte) CompressionPhrases {
 			StartCompressed:   inI,
 			Content:           out.Bytes()[copyStart:],
 		})
-		copyStart = -1
 		inI += (out.Len() - copyStart) * 8
+		copyStart = -1
 	}
 
 	emitRef := func(b *backref) {
