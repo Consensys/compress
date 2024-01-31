@@ -27,9 +27,10 @@ type Compressor struct {
 	inputIndex *suffixarray.Index
 	inputSa    [MaxInputSize]int32 // suffix array space.
 
-	dictData  []byte
-	dictIndex *suffixarray.Index
-	dictSa    [MaxDictSize]int32 // suffix array space.
+	dictData        []byte
+	dictIndex       *suffixarray.Index
+	dictSa          [MaxDictSize]int32 // suffix array space.
+	dictReservedIdx map[byte]int
 
 	level         Level
 	intendedLevel Level
@@ -66,8 +67,31 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
 	}
 	c := &Compressor{
-		dictData: dict,
+		dictData:        dict,
+		dictReservedIdx: make(map[byte]int),
 	}
+
+	// TODO @gbotrel cleanup
+	found := uint8(0)
+	const mask uint8 = 0b111
+	for i, b := range dict {
+		if b == SymbolDict {
+			found |= 0b001
+			c.dictReservedIdx[SymbolDict] = i
+		} else if b == SymbolShort {
+			found |= 0b010
+			c.dictReservedIdx[SymbolShort] = i
+		} else if b == SymbolLong {
+			found |= 0b100
+			c.dictReservedIdx[SymbolLong] = i
+		} else {
+			continue
+		}
+		if found == mask {
+			break
+		}
+	}
+
 	c.outBuf.Grow(MaxInputSize)
 	c.inBuf.Grow(1 << longBrAddressNbBits)
 	c.bw = bitio.NewWriter(&c.outBuf)
@@ -170,7 +194,49 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return bLong, bLong.savings()
 	}
 
+	const minRepeatingBytes = 160
 	for i := compressor.lastInLen; i < len(d); {
+		// if we have a series of repeating bytes, we can have a special path for perf reasons.
+		count := 0
+		for i+count < len(d) && count <= 1<<8 && d[i] == d[i+count] {
+			// no need to count after 1 << 8
+			count++
+		}
+		if count >= minRepeatingBytes {
+			// we have a series of repeating bytes
+			// we write the symbol at i
+			// and do a backref of length count-1 at i+1
+			if i > 0 && d[i-1] == d[i] {
+				// we don't need to write the symbol at i.
+			} else {
+				if !canEncodeSymbol(d[i]) {
+					// we need to find a backref of len exactly 1. our dictionary should have it.
+					bDict.address, bDict.length = compressor.dictReservedIdx[d[i]], 1
+					bDict.writeTo(compressor.bw, i)
+				} else {
+					compressor.writeByte(d[i])
+				}
+				i++
+				count--
+			}
+
+			if count <= shortBackRefType.maxLength {
+				bShort.address = i - 1
+				bShort.length = count
+				bShort.writeTo(compressor.bw, i)
+				i += count
+				continue
+			}
+			if count > longBackRefType.maxLength {
+				count = longBackRefType.maxLength
+			}
+			bLong.address = i - 1
+			bLong.length = count
+			bLong.writeTo(compressor.bw, i)
+			i += count
+			continue
+		}
+
 		if !canEncodeSymbol(d[i]) {
 			// we must find a backref.
 			if !fillBackrefs(i, 1) {

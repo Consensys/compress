@@ -476,14 +476,13 @@ func BenchmarkCompressNomial100kB(b *testing.B) {
 	}
 
 	// benchmark lzss
-	b.Run("lzss", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, err := compressor.Compress(data)
-			if err != nil {
-				b.Fatal(err)
-			}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := compressor.Compress(data)
+		if err != nil {
+			b.Fatal(err)
 		}
-	})
+	}
 }
 
 func BenchmarkCompressRepeated100kB(b *testing.B) {
@@ -497,12 +496,11 @@ func BenchmarkCompressRepeated100kB(b *testing.B) {
 	}
 
 	// benchmark lzss
-	b.Run("lzss", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, err := compressor.Compress(data)
-			if err != nil {
-				b.Fatal(err)
-			}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := compressor.Compress(data)
+		if err != nil {
+			b.Fatal(err)
 		}
-	})
+	}
 }
