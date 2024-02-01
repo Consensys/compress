@@ -139,12 +139,6 @@ func FuzzCompress(f *testing.F) {
 			}
 		}
 
-		// compressor.Bytes() should be empty.
-		// TODO: fix this right now it's probably the header.
-		// if len(compressor.Bytes()) != 0 {
-		// 	t.Fatal("Bytes() should be empty after revert")
-		// }
-
 		// test write byte by byte with revert and write again
 		compressor, err = NewCompressor(dict, level)
 		if err != nil {
@@ -451,4 +445,56 @@ func TestRevertAfterBypass(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, d[:block1Size], dBack)
 	assert.Less(t, len(c), block1Size, "first block should be compressed")
+}
+
+func BenchmarkCompressNomial100kB(b *testing.B) {
+	// read the file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	if err != nil {
+		b.Fatal(err)
+	}
+	if len(data) > (100 * 1024) {
+		data = data[:100*1024]
+	}
+
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, BestCompression)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// benchmark lzss
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := compressor.Compress(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCompressRepeated100kB(b *testing.B) {
+	// 100kB of zeroes.
+	data := make([]byte, 100*1024)
+
+	dict := getDictionary()
+	compressor, err := NewCompressor(dict, BestCompression)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// benchmark lzss
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := compressor.Compress(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
