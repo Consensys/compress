@@ -139,12 +139,6 @@ func FuzzCompress(f *testing.F) {
 			}
 		}
 
-		// compressor.Bytes() should be empty.
-		// TODO: fix this right now it's probably the header.
-		// if len(compressor.Bytes()) != 0 {
-		// 	t.Fatal("Bytes() should be empty after revert")
-		// }
-
 		// test write byte by byte with revert and write again
 		compressor, err = NewCompressor(dict, level)
 		if err != nil {

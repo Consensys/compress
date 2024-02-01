@@ -193,7 +193,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	for i := compressor.lastInLen; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		for i+count < len(d) && count <= shortBackRefType.maxLength && d[i] == d[i+count] {
+		for i+count < len(d) && count < shortBackRefType.maxLength && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
