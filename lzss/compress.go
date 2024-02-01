@@ -30,7 +30,7 @@ type Compressor struct {
 	dictData        []byte
 	dictIndex       *suffixarray.Index
 	dictSa          [MaxDictSize]int32 // suffix array space.
-	dictReservedIdx map[byte]int
+	dictReservedIdx map[byte]int       // stores the index of the reserved symbols in the dictionary
 
 	level         Level
 	intendedLevel Level
@@ -71,23 +71,18 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 		dictReservedIdx: make(map[byte]int),
 	}
 
-	// TODO @gbotrel cleanup
-	found := uint8(0)
-	const mask uint8 = 0b111
+	// find the reserved symbols in the dictionary
 	for i, b := range dict {
 		if b == SymbolDict {
-			found |= 0b001
 			c.dictReservedIdx[SymbolDict] = i
 		} else if b == SymbolShort {
-			found |= 0b010
 			c.dictReservedIdx[SymbolShort] = i
 		} else if b == SymbolLong {
-			found |= 0b100
 			c.dictReservedIdx[SymbolLong] = i
 		} else {
 			continue
 		}
-		if found == mask {
+		if len(c.dictReservedIdx) == 3 {
 			break
 		}
 	}
@@ -196,21 +191,22 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 
 	const minRepeatingBytes = 160
 	for i := compressor.lastInLen; i < len(d); {
-		// if we have a series of repeating bytes, we can have a special path for perf reasons.
+		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		for i+count < len(d) && count <= 1<<8 && d[i] == d[i+count] {
-			// no need to count after 1 << 8
+		for i+count < len(d) && count <= shortBackRefType.maxLength && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
-			// we have a series of repeating bytes
+			// we have a series of repeating bytes which would make a reasonable backref
+			// let's use this path for perf reasons.
+
+			// first, we need to ensure the previous byte is the same to have the start point for the backref
+
 			// we write the symbol at i
-			// and do a backref of length count-1 at i+1
-			if i > 0 && d[i-1] == d[i] {
-				// we don't need to write the symbol at i.
-			} else {
+			if !(i > 0 && d[i-1] == d[i]) {
 				if !canEncodeSymbol(d[i]) {
-					// we need to find a backref of len exactly 1. our dictionary should have it.
+					// if this is a reserved symbol, it should be in the dictionary
+					// (this is a backref with len(1))
 					bDict.address, bDict.length = compressor.dictReservedIdx[d[i]], 1
 					bDict.writeTo(compressor.bw, i)
 				} else {
@@ -218,21 +214,12 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 				}
 				i++
 				count--
-			}
+				// we can now do a backref of length count-1 at i+1
+			} // else --> we do a backref of length count at i
 
-			if count <= shortBackRefType.maxLength {
-				bShort.address = i - 1
-				bShort.length = count
-				bShort.writeTo(compressor.bw, i)
-				i += count
-				continue
-			}
-			if count > longBackRefType.maxLength {
-				count = longBackRefType.maxLength
-			}
-			bLong.address = i - 1
-			bLong.length = count
-			bLong.writeTo(compressor.bw, i)
+			bShort.address = i - 1
+			bShort.length = count
+			bShort.writeTo(compressor.bw, i)
 			i += count
 			continue
 		}
