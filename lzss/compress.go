@@ -325,6 +325,12 @@ func (compressor *Compressor) Written() int {
 	return compressor.inBuf.Len()
 }
 
+// WrittenBytes returns the bytes written to the compressor
+// This returns a pointer to the internal buffer, so it should not be modified
+func (compressor *Compressor) WrittenBytes() []byte {
+	return compressor.inBuf.Bytes()
+}
+
 // Revert undoes the last call to Write
 // between any two calls to Revert, a call to Reset or Write should be made
 func (compressor *Compressor) Revert() error {
