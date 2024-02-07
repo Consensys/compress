@@ -193,6 +193,50 @@ func FuzzCompress(f *testing.F) {
 	})
 }
 
+func FuzzCompressedSize(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, input, dict []byte, cMode uint8) {
+		const maxInputSize = 1 << 18 // 256KB
+		if len(input) > maxInputSize {
+			t.Skip("input too large")
+		}
+		if len(dict) > MaxDictSize {
+			t.Skip("dict too large")
+		}
+		var level Level
+		if cMode&2 == 2 {
+			level = 2
+		} else if cMode&4 == 4 {
+			level = 4
+		} else if cMode&8 == 8 {
+			level = 8
+		} else {
+			level = BestCompression
+		}
+
+		compressor, err := NewCompressor(dict, level)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		compressed, err := compressor.Compress(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		n, err := compressor.CompressedSize256k(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if n != len(compressed) {
+			t.Fatal("CompressedSize256k returned wrong size")
+		}
+
+	})
+
+}
+
 func Test300ZerosAfterNonzero(t *testing.T) { // probably won't happen in our calldata
 	testCompressionRoundTrip(t, append([]byte{'h', 'i'}, make([]byte, 300)...))
 }
@@ -493,6 +537,37 @@ func BenchmarkCompressRepeated100kB(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := compressor.Compress(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCompressedSize(b *testing.B) {
+	// read the file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	if err != nil {
+		b.Fatal(err)
+	}
+	data = data[1<<17 : (1<<17)+1<<16]
+
+	dict := getDictionary()
+
+	compressor, err := NewCompressor(dict, BestCompression)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// benchmark lzss
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := compressor.CompressedSize256k(data)
 		if err != nil {
 			b.Fatal(err)
 		}
