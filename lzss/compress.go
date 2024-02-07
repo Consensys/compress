@@ -161,22 +161,44 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 		return len(d), nil
 	}
 
-	n, d = len(d), compressor.inBuf.Bytes()
-
-	// initialize bit writer & backref types
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(compressor.dictData), compressor.level)
+	d = compressor.inBuf.Bytes()
 
 	// build the index
 	compressor.inputIndex = suffixarray.New(d, compressor.inputSa[:len(d)])
+
+	n, err = compressor.write(compressor.bw, d, compressor.lastInLen, compressor.inputIndex)
+	if err != nil {
+		return
+	}
+
+	if err = compressor.bw.TryError; err != nil {
+		return
+	}
+
+	compressor.nbSkippedBits, err = compressor.bw.Align()
+	return
+}
+
+type writer interface {
+	TryWriteBits(v uint64, nbBits uint8)
+	TryWriteByte(b byte)
+}
+
+// write compresses the data and writes it to the writer
+// note that this is meant to be stateless and not modify the compressor object.
+func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputIndex *suffixarray.Index) (n int, err error) {
+	dictLen := len(compressor.dictData)
+	// initialize bit writer & backref types
+	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(dictLen, compressor.level)
 
 	bDict := backref{bType: dictBackRefType, length: -1, address: -1}
 	bShort := backref{bType: shortBackRefType, length: -1, address: -1}
 	bLong := backref{bType: longBackRefType, length: -1, address: -1}
 
 	fillBackrefs := func(i int, minLen int) bool {
-		bDict.address, bDict.length = compressor.findBackRef(d, i, dictBackRefType, minLen)
-		bShort.address, bShort.length = compressor.findBackRef(d, i, shortBackRefType, minLen)
-		bLong.address, bLong.length = compressor.findBackRef(d, i, longBackRefType, minLen)
+		bDict.address, bDict.length = findBackRef(d, i, dictBackRefType, minLen, compressor.dictIndex, dictLen)
+		bShort.address, bShort.length = findBackRef(d, i, shortBackRefType, minLen, inputIndex, dictLen)
+		bLong.address, bLong.length = findBackRef(d, i, longBackRefType, minLen, inputIndex, dictLen)
 		return !(bDict.length == -1 && bShort.length == -1 && bLong.length == -1)
 	}
 	bestBackref := func() (backref, int) {
@@ -190,7 +212,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	const minRepeatingBytes = 160
-	for i := compressor.lastInLen; i < len(d); {
+	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
 		for i+count < len(d) && count < shortBackRefType.maxLength && d[i] == d[i+count] {
@@ -208,9 +230,9 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 					// if this is a reserved symbol, it should be in the dictionary
 					// (this is a backref with len(1))
 					bDict.address, bDict.length = compressor.dictReservedIdx[d[i]], 1
-					bDict.writeTo(compressor.bw, i)
+					bDict.writeTo(w, i)
 				} else {
-					compressor.writeByte(d[i])
+					w.TryWriteByte(d[i])
 				}
 				i++
 				count--
@@ -219,7 +241,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 
 			bShort.address = i - 1
 			bShort.length = count
-			bShort.writeTo(compressor.bw, i)
+			bShort.writeTo(w, i)
 			i += count
 			continue
 		}
@@ -228,16 +250,16 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 			// we must find a backref.
 			if !fillBackrefs(i, 1) {
 				// we didn't find a backref but can't write the symbol directly
-				return i - compressor.lastInLen, fmt.Errorf("could not find a backref at index %d", i)
+				return i - startIndex, fmt.Errorf("could not find a backref at index %d", i)
 			}
 			best, _ := bestBackref()
-			best.writeTo(compressor.bw, i)
+			best.writeTo(w, i)
 			i += best.length
 			continue
 		}
 		if !fillBackrefs(i, -1) {
 			// we didn't find a backref, let's write the symbol directly
-			compressor.writeByte(d[i])
+			w.TryWriteByte(d[i])
 			i++
 			continue
 		}
@@ -247,7 +269,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 			if fillBackrefs(i+1, bestAtI.length+1) {
 				if newBest, newSavings := bestBackref(); newSavings > bestSavings {
 					// we found a better backref at i+1
-					compressor.writeByte(d[i])
+					w.TryWriteByte(d[i])
 					i++
 
 					// then mark backref to be written at i+1
@@ -259,7 +281,7 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 						if fillBackrefs(i+1, bestAtI.length+1) {
 							// we found an even better backref
 							if newBest, newSavings := bestBackref(); newSavings > bestSavings {
-								compressor.writeByte(d[i])
+								w.TryWriteByte(d[i])
 								i++
 
 								bestAtI = newBest
@@ -273,9 +295,9 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 					if newBest, newSavings := bestBackref(); newSavings > bestSavings {
 						// we found a better backref
 						// write the symbol at i
-						compressor.writeByte(d[i])
+						w.TryWriteByte(d[i])
 						i++
-						compressor.writeByte(d[i])
+						w.TryWriteByte(d[i])
 						i++
 
 						// then emit the backref at i+2
@@ -285,16 +307,11 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 			}
 		}
 
-		bestAtI.writeTo(compressor.bw, i)
+		bestAtI.writeTo(w, i)
 		i += bestAtI.length
 	}
 
-	if err = compressor.bw.TryError; err != nil {
-		return
-	}
-
-	compressor.nbSkippedBits, err = compressor.bw.Align()
-	return
+	return len(d) - startIndex, nil
 }
 
 func (compressor *Compressor) Reset() {
@@ -399,14 +416,57 @@ func (compressor *Compressor) Stream() compress.Stream {
 	}
 }
 
-// Compress compresses the given data; if hint is provided, the compressor will try to use it
-// hint should be a subset of the data compressed by the same compressor
-// For example, calling Compress([]byte{1, 2, 3, 4, 5}, compressed([]byte{1, 2, 3})) will
-// result in much faster compression than calling Compress([]byte{1, 2, 3, 4, 5})
+// Compress compresses the given data and returns the compressed data
 func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 	compressor.Reset()
 	_, err = compressor.Write(d)
 	return compressor.Bytes(), err
+}
+
+// CompressedSize256k returns the size of the compressed data
+// This is state less and thread-safe (but other methods are not)
+// Max size of d is 256kB
+func (compressor *Compressor) CompressedSize256k(d []byte) (size int, err error) {
+	size = HeaderSize
+	if compressor.level == NoCompression {
+		size += len(d)
+		return
+	}
+	const maxInputSize = 1 << 18 // 256kB
+	if len(d) > maxInputSize {
+		return 0, fmt.Errorf("input size must be <= %d", maxInputSize)
+	}
+
+	// build the index
+	var indexSpace [maxInputSize]int32 // should be allocated on the stack.
+	index := suffixarray.New(d, indexSpace[:len(d)])
+
+	bw := &bitCounterWriter{}
+	_, err = compressor.write(bw, d, 0, index)
+	if err != nil {
+		return
+	}
+
+	size += bw.Len()
+	return
+}
+
+type bitCounterWriter struct {
+	nbBits int
+}
+
+func (b *bitCounterWriter) TryWriteBits(_ uint64, nbBits uint8) {
+	b.nbBits += int(nbBits)
+}
+
+func (b *bitCounterWriter) TryWriteByte(_ byte) {
+	b.nbBits += 8
+}
+
+// Len returns the number of bytes written so far
+// --> we round up nbBits to the next byte
+func (b *bitCounterWriter) Len() int {
+	return (b.nbBits + 7) / 8
 }
 
 // canEncodeSymbol returns true if the symbol can be encoded directly
@@ -414,17 +474,10 @@ func canEncodeSymbol(b byte) bool {
 	return b != SymbolDict && b != SymbolShort && b != SymbolLong
 }
 
-func (compressor *Compressor) writeByte(b byte) {
-	if !canEncodeSymbol(b) {
-		panic("cannot encode symbol")
-	}
-	compressor.bw.TryWriteByte(b)
-}
-
 // findBackRef attempts to find a backref in the window [i-brAddressRange, i+brLengthRange]
 // if no backref is found, it returns -1, -1
 // else returns the address and length of the backref
-func (compressor *Compressor) findBackRef(data []byte, i int, bType BackrefType, minLength int) (addr, length int) {
+func findBackRef(data []byte, i int, bType BackrefType, minLength int, index *suffixarray.Index, dictLen int) (addr, length int) {
 	if minLength == -1 {
 		minLength = bType.nbBytesBackRef
 	}
@@ -445,10 +498,10 @@ func (compressor *Compressor) findBackRef(data []byte, i int, bType BackrefType,
 	}
 
 	if bType.dictOnly {
-		return compressor.dictIndex.LookupLongest(data[i:i+maxRefLen], minLength, maxRefLen, 0, len(compressor.dictData))
+		return index.LookupLongest(data[i:i+maxRefLen], minLength, maxRefLen, 0, dictLen)
 	}
 
-	return compressor.inputIndex.LookupLongest(data[i:i+maxRefLen], minLength, maxRefLen, windowStart, i)
+	return index.LookupLongest(data[i:i+maxRefLen], minLength, maxRefLen, windowStart, i)
 }
 
 func max(a, b int) int {

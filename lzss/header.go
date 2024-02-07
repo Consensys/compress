@@ -7,7 +7,8 @@ import (
 
 const (
 	// Version is the current release version of the compressor.
-	Version = 0
+	Version    = 0
+	HeaderSize = 3
 )
 
 // Header is the header of a compressed data.
@@ -29,11 +30,11 @@ func (s *Header) WriteTo(w io.Writer) (int64, error) {
 		return 2, err
 	}
 
-	return 3, nil
+	return HeaderSize, nil
 }
 
 func (s *Header) ReadFrom(r io.Reader) (int64, error) {
-	var b [3]byte
+	var b [HeaderSize]byte
 	n, err := io.ReadFull(r, b[:])
 	if err != nil {
 		return int64(n), err
