@@ -3,9 +3,8 @@ package lzss
 import (
 	"bytes"
 	"fmt"
-	"math/bits"
-
 	"github.com/consensys/compress/lzss/internal/suffixarray"
+	"math/bits"
 )
 
 type Compressor struct {
@@ -55,6 +54,10 @@ const (
 // The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
 // The level determines the bit alignment of the compressed data. The "higher" the level, the better the compression ratio but the more constraints on the decompressor.
 func NewCompressor(dict []byte, level Level) (*Compressor, error) {
+	return newCompressor(dict, level, newBitWriter(MaxInputSize))
+}
+
+func newCompressor(dict []byte, level Level, outWriter bitWriter) (*Compressor, error) {
 	dict = AugmentDict(dict)
 	if len(dict) > MaxDictSize {
 		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
@@ -80,7 +83,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 		}
 	}
 
-	c.out = newBitWriter(MaxInputSize)
+	c.out = outWriter
 	c.inBuf.Grow(1 << longBrAddressNbBits)
 	if level != NoCompression {
 		// if we don't compress we don't need the dict.

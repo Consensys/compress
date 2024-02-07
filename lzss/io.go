@@ -85,3 +85,44 @@ func newBitWriter(size int) *writer {
 	res.bw = bitio.NewWriter(&res.bb)
 	return &res
 }
+
+type bitCounter struct {
+	nbBits uint64
+}
+
+func (b *bitCounter) Write(p []byte) (n int, err error) {
+	b.nbBits += uint64(len(p)) * 8
+	return len(p), nil
+}
+
+func (b *bitCounter) startSession() error { return nil }
+
+func (b *bitCounter) tryWriteBits(v uint64, nbBits uint8) {
+	b.nbBits += uint64(nbBits)
+}
+
+func (b *bitCounter) tryWriteByte(_b byte) {
+	b.nbBits += 8
+}
+
+func (b *bitCounter) tryError() error { return nil }
+
+func (b *bitCounter) endSession() error {
+	return nil
+}
+
+func (b *bitCounter) reset() {
+	b.nbBits = 0
+}
+
+func (b *bitCounter) bytes() []byte {
+	panic("not available")
+}
+
+func (b *bitCounter) len() int {
+	return int((b.nbBits + 7) / 8)
+}
+
+func (b *bitCounter) revert() {
+	panic("not available")
+}

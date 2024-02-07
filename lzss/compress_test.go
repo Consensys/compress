@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -497,4 +499,43 @@ func BenchmarkCompressRepeated100kB(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestLengthEstimator(t *testing.T) {
+
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(t, err)
+
+	dict := getDictionary()
+	le := NewLengthEstimator(dict, BestCompression)
+
+	var wg sync.WaitGroup
+
+	runParallel := func() {
+		wg.Add(10)
+		for i := 0; i < 10; i++ {
+			go func() {
+				compressor, err := NewCompressor(dict, BestCompression)
+				require.NoError(t, err)
+
+				n := rand.Intn(len(d))    // #nosec G404
+				data := d[rand.Intn(n):n] // #nosec G404
+
+				c, err := compressor.Compress(data)
+				require.NoError(t, err)
+
+				estLen, err := le.EstimateLength(data)
+				require.NoError(t, err)
+
+				require.Equal(t, estLen, len(c), "estimated length should be equal to the compressed length")
+
+				defer wg.Done()
+			}()
+		}
+		wg.Wait()
+	}
+
+	runParallel()
+	runParallel() // reusing properly?
+	assert.LessOrEqual(t, len(le.compressors), 10, "should not have more than 10 compressors")
 }
