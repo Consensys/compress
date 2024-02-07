@@ -39,8 +39,8 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	var out bytes.Buffer
 	out.Grow(len(data) * 7)
 
-	// read byte per byte; if it's a backref, write the corresponding bytes
-	// otherwise, write the byte as is
+	// read byte per byte; if it's a backref, Write the corresponding bytes
+	// otherwise, Write the byte as is
 	s := in.TryReadByte()
 	for in.TryError == nil {
 		switch s {
@@ -155,8 +155,8 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		inI += int(b.bType.NbBitsBackRef)
 	}
 
-	// read byte per byte; if it's a backref, write the corresponding bytes
-	// otherwise, write the byte as is
+	// read byte per byte; if it's a backref, Write the corresponding bytes
+	// otherwise, Write the byte as is
 	s := in.TryReadByte()
 	for in.TryError == nil {
 		switch s {

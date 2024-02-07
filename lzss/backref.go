@@ -49,14 +49,14 @@ type backref struct {
 
 // Warning; writeTo and readFrom are not symmetrical
 
-func (b *backref) writeTo(w *bitio.Writer, i int) {
-	w.TryWriteByte(b.bType.Delimiter)
-	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
+func (b *backref) writeTo(w bitWriter, i int) {
+	w.tryWriteByte(b.bType.Delimiter)
+	w.tryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
 	addrToWrite := b.address
 	if !b.bType.dictOnly {
 		addrToWrite = i - b.address - 1
 	}
-	w.TryWriteBits(uint64(addrToWrite), b.bType.NbBitsAddress)
+	w.tryWriteBits(uint64(addrToWrite), b.bType.NbBitsAddress)
 }
 
 func (b *backref) readFrom(r *bitio.Reader) {

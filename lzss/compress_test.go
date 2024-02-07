@@ -101,7 +101,7 @@ func FuzzCompress(f *testing.F) {
 			}
 		}
 
-		// test compress (i.e write all the bytes)
+		// test compress (i.e Write all the bytes)
 		compressor, err := NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
@@ -113,7 +113,7 @@ func FuzzCompress(f *testing.F) {
 
 		checkDecompressResult(compressedBytes)
 
-		// test write byte by byte
+		// test Write byte by byte
 		compressor, err = NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
@@ -125,7 +125,7 @@ func FuzzCompress(f *testing.F) {
 		}
 		checkDecompressResult(compressor.Bytes())
 
-		// test write byte by byte with revert
+		// test Write byte by byte with revert
 		compressor, err = NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
@@ -139,7 +139,7 @@ func FuzzCompress(f *testing.F) {
 			}
 		}
 
-		// test write byte by byte with revert and write again
+		// test Write byte by byte with revert and Write again
 		compressor, err = NewCompressor(dict, level)
 		if err != nil {
 			t.Fatal(err)
@@ -168,22 +168,22 @@ func FuzzCompress(f *testing.F) {
 		if len(input) > 1 {
 			compressor.Reset()
 
-			// write all but the last byte
+			// Write all but the last byte
 			if _, err := compressor.Write(input[:len(input)-1]); err != nil {
 				t.Fatal(err)
 			}
-			// write the last byte
+			// Write the last byte
 			if _, err := compressor.Write([]byte{input[len(input)-1]}); err != nil {
 				t.Fatal(err)
 			}
 			checkDecompressResult(compressor.Bytes())
 
 			compressor.Reset()
-			// write the first byte
+			// Write the first byte
 			if _, err := compressor.Write([]byte{input[0]}); err != nil {
 				t.Fatal(err)
 			}
-			// write the rest
+			// Write the rest
 			if _, err := compressor.Write(input[1:]); err != nil {
 				t.Fatal(err)
 			}
