@@ -1,6 +1,7 @@
 package lzss
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/icza/bitio"
@@ -36,9 +37,9 @@ func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictOnly boo
 }
 
 const (
-	SymbolDict  = 0xFF
-	SymbolShort = 0xFE
-	SymbolLong  = 0xFD
+	SymbolDict  byte = 0xFF
+	SymbolShort byte = 0xFE
+	SymbolLong  byte = 0xFD
 )
 
 type backref struct {
@@ -59,7 +60,7 @@ func (b *backref) writeTo(w writer, i int) {
 	w.TryWriteBits(uint64(addrToWrite), b.bType.NbBitsAddress)
 }
 
-func (b *backref) readFrom(r *bitio.Reader) {
+func (b *backref) readFrom(r *bitio.Reader) error {
 	n := r.TryReadBits(b.bType.NbBitsLength)
 	b.length = int(n) + 1
 
@@ -68,6 +69,16 @@ func (b *backref) readFrom(r *bitio.Reader) {
 	if !b.bType.dictOnly {
 		b.address++
 	}
+
+	if r.TryError != nil {
+		return r.TryError
+	}
+
+	if b.length <= 0 || b.address < 0 {
+		return fmt.Errorf("invalid back reference: %v", b)
+	}
+
+	return nil
 }
 
 func (b *backref) savings() int {

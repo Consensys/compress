@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"github.com/icza/bitio"
+	"fmt"
 	"strconv"
+
+	"github.com/icza/bitio"
 )
 
 // Decompress decompresses the given data using the given dictionary
@@ -19,7 +21,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	var header Header
 	sizeHeader, err := header.ReadFrom(in)
 	if err != nil {
-		return
+		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 	if header.Version != Version {
 		return nil, errors.New("unsupported compressor version")
@@ -46,19 +48,34 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 		switch s {
 		case SymbolShort:
 			// short back ref
-			bShort.readFrom(in)
+			if err := bShort.readFrom(in); err != nil {
+				return nil, err
+			}
 			for i := 0; i < bShort.length; i++ {
+				if bShort.address > out.Len() {
+					return nil, fmt.Errorf("invalid short backref %v - output buffer is only %d bytes long", bShort, out.Len())
+				}
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
 		case SymbolLong:
 			// long back ref
-			bLong.readFrom(in)
+			if err := bLong.readFrom(in); err != nil {
+				return nil, err
+			}
 			for i := 0; i < bLong.length; i++ {
+				if bLong.address > out.Len() {
+					return nil, fmt.Errorf("invalid long backref %v - output buffer is only %d bytes long", bLong, out.Len())
+				}
 				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
 			}
 		case SymbolDict:
 			// dict back ref
-			bDict.readFrom(in)
+			if err := bDict.readFrom(in); err != nil {
+				return nil, err
+			}
+			if bDict.address > len(dict) || bDict.address+bDict.length > len(dict) {
+				return nil, fmt.Errorf("invalid dict backref %v - dict is only %d bytes long", bDict, len(dict))
+			}
 			out.Write(dict[bDict.address : bDict.address+bDict.length])
 		default:
 			out.WriteByte(s)
@@ -163,7 +180,9 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolShort:
 			emitLiteralIfNecessary()
 			// short back ref
-			bShort.readFrom(in)
+			if err := bShort.readFrom(in); err != nil {
+				return nil, err
+			}
 			for i := 0; i < bShort.length; i++ {
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
@@ -171,7 +190,9 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolLong:
 			emitLiteralIfNecessary()
 			// long back ref
-			bLong.readFrom(in)
+			if err := bLong.readFrom(in); err != nil {
+				return nil, err
+			}
 			for i := 0; i < bLong.length; i++ {
 				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
 			}
@@ -179,7 +200,9 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolDict:
 			emitLiteralIfNecessary()
 			// dict back ref
-			bDict.readFrom(in)
+			if err := bDict.readFrom(in); err != nil {
+				return nil, err
+			}
 			out.Write(dict[bDict.address : bDict.address+bDict.length])
 			emitRef(&bDict)
 		default:
