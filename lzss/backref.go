@@ -37,9 +37,9 @@ func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictOnly boo
 }
 
 const (
-	SymbolDict  byte = 0xFF
-	SymbolShort byte = 0xFE
-	SymbolLong  byte = 0xFD
+	SymbolDict    byte = 0xFF
+	SymbolDynamic byte = 0xFE
+	SymbolShort   byte = 0xFD
 )
 
 type backref struct {
