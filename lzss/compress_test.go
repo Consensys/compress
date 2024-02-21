@@ -457,8 +457,8 @@ func TestCraftExpandingInput(t *testing.T) {
 }
 
 func craftExpandingInput(dict []byte, size int) []byte {
-	dRefType := dictBackRefType(len(dict), BestCompression)
-	nbBytesExpandingBlock := dRefType.nbBytesBackRef
+	_, dictType := InitBackRefTypes(len(dict), BestCompression)
+	nbBytesExpandingBlock := dictType.nbBytesBackRef
 
 	// the following two methods convert between a byte slice and a number; just for convenient use as map keys and counters
 	bytesToNum := func(b []byte) uint64 {
