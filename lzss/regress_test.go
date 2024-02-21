@@ -54,7 +54,15 @@ func TestReferenceBlobs(t *testing.T) {
 			// check compression ratio
 			lzssRatio := float64(len(f)) / float64(len(compressed))
 
-			t.Logf("%s: original size: %d, compressed size: %d, lzss ratio: %.2f", filename, len(f), len(compressed), lzssRatio)
+			delta := ref.lzssRatio - lzssRatio
+			emoji := "👍"
+			if delta <= 0 {
+				// set emoji to green checkmark
+				emoji = "✅"
+			} else {
+				emoji = "❌"
+			}
+			t.Logf("%s: original size: %d, compressed size: %d, lzss ratio: %.2f (%s --> %.2f)", filename, len(f), len(compressed), lzssRatio, emoji, delta)
 
 			assert.InDelta(ref.lzssRatio, lzssRatio, 0.05)
 
