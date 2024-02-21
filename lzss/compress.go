@@ -54,8 +54,8 @@ const (
 )
 
 const (
-	headerBitLen        = 24
-	longBrAddressNbBits = 19
+	headerBitLen     = 24 // 3 bytes
+	maxBackrefBitLen = 8  // max length of a backref in bits
 )
 
 // NewCompressor returns a new compressor with the given dictionary
@@ -88,7 +88,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	}
 
 	c.outBuf.Grow(MaxInputSize)
-	c.inBuf.Grow(1 << longBrAddressNbBits)
+	c.inBuf.Grow(1 << 19)
 	c.bw = bitio.NewWriter(&c.outBuf)
 	if level != NoCompression {
 		// if we don't compress we don't need the dict.
@@ -131,8 +131,8 @@ func InitBackRefTypes(dictLen int, level Level) (short, dict BackrefType) {
 			return uint8(a)
 		}
 	}
-	short = newBackRefType(SymbolShort, wordAlign(14), 8, false)
-	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), 8, true)
+	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefBitLen, false)
+	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), maxBackrefBitLen, true)
 	return
 }
 
@@ -149,7 +149,7 @@ func InitDynamicBackref(addressableBytes int, level Level) (dynamic BackrefType)
 	if bound > 20 {
 		bound = 20
 	}
-	return newBackRefType(SymbolDynamic, wordAlign(bound), 8, false)
+	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefBitLen, false)
 }
 
 // The compressor cannot recover from a Write error. It must be Reset before writing again
@@ -246,7 +246,7 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		for i+count < len(d) && count < shortType.maxLength && d[i] == d[i+count] {
+		for i+count < len(d) && count < (1<<maxBackrefBitLen) && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
@@ -275,7 +275,12 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 			} // else --> we do a backref of length count at i
 
 			bShort := backref{bType: shortType, address: i - 1, length: count}
-			bShort.writeTo(w, i)
+			bDynamic := backref{bType: InitDynamicBackref(i, compressor.level), address: i - 1, length: count}
+			if bShort.savings() > bDynamic.savings() {
+				bShort.writeTo(w, i)
+			} else {
+				bDynamic.writeTo(w, i)
+			}
 			i += count
 			continue
 		}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/icza/bitio"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/stretchr/testify/require"
@@ -389,51 +390,47 @@ func min(a, b int) int {
 	return b
 }
 
-// func TestInvalidBackref(t *testing.T) {
-// 	data := make([]byte, 100)
-// 	for i := 0; i < 32; i++ {
-// 		data[i] = 1
-// 	}
-// 	for i := 32; i < 64; i++ {
-// 		data[i] = 2
-// 	}
-// 	for i := 64; i < 100; i++ {
-// 		data[i] = 3
-// 	}
-// 	assert := require.New(t)
+func TestInvalidBackref(t *testing.T) {
+	shortType, _ := InitBackRefTypes(0, BestCompression)
 
-// 	compressor, err := NewCompressor([]byte{}, BestCompression)
-// 	assert.NoError(err)
+	assert := require.New(t)
 
-// 	c, err := compressor.Compress(data)
-// 	assert.NoError(err)
+	compressor, err := NewCompressor([]byte{}, BestCompression)
+	assert.NoError(err)
 
-// 	_, err = Decompress(c, []byte{})
-// 	assert.NoError(err)
+	c, err := compressor.Compress([]byte{})
+	assert.NoError(err)
 
-// 	// c[:HeaderSize] is the header
-// 	// c[HeaderSize] is the first byte of the compressed data --> should be a 1
-// 	assert.Equal(byte(1), c[HeaderSize])
+	// we should have the header only here.
+	assert.Equal(len(c), HeaderSize)
 
-// 	// then we should have a backref to the first 1
-// 	assert.Equal(byte(SymbolShort), c[HeaderSize+1])
+	// let's write a short back ref with a valid address and length
+	c = append(c, byte(1))
+	sbr := backref{bType: shortType, address: 0, length: 5}
+	var buf bytes.Buffer
+	w := bitio.NewWriter(&buf)
+	sbr.writeTo(w, 1)
+	_, err = w.Align()
+	assert.NoError(err)
+	c = append(c, buf.Bytes()...)
 
-// 	shortBackref, _, _ := InitBackRefTypes(0, BestCompression)
+	// decompress and check that we have what we expect
+	decompressed, err := Decompress(c, []byte{})
+	assert.NoError(err)
+	assert.Equal([]byte{1, 1, 1, 1, 1, 1}, decompressed)
 
-// 	sbr := backref{bType: shortBackref}
+	// now let's do the same thing but with an invalid address
+	c = c[:HeaderSize]
+	buf.Reset()
+	sbr.address = 255 // should be invalid
+	sbr.writeTo(w, 1)
+	_, err = w.Align()
+	assert.NoError(err)
+	c = append(c, buf.Bytes()...)
 
-// 	err = sbr.readFrom(bitio.NewReader(bytes.NewReader(c[HeaderSize+1:])))
-// 	assert.NoError(err)
-
-// 	sbr.address = 255 // should be invalid
-// 	var buf bytes.Buffer
-// 	sbr.writeTo(bitio.NewWriter(&buf), 0)
-
-// 	copy(c[HeaderSize+1:], buf.Bytes())
-
-// 	_, err = Decompress(c, []byte{})
-// 	assert.Error(err)
-// }
+	_, err = Decompress(c, []byte{})
+	assert.Error(err)
+}
 
 func TestCraftExpandingInput(t *testing.T) {
 	assert := require.New(t)
