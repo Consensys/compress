@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"math/bits"
-	"runtime"
-	"sync"
 
 	"github.com/consensys/compress"
 
@@ -229,68 +227,50 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 			return uint8(a)
 		}
 	}
-	dictBackRefType := dictBackRefType(dictLen, compressor.level)
+	dictType := dictBackRefType(dictLen, compressor.level)
 	shortType := newBackRefType(SymbolShort, wordAlign(14), 8, false)
 
-	// bDict := backref{bType: dictBackRefType, length: -1, address: -1}
-	// bLong := backref{length: -1, address: -1}
-	// bShort := backref{bType: shortType, length: -1, address: -1}
+	// we use a circular buffer to store the last 3 backrefs
+	cb := newCircularBuffer()
 
-	type br struct {
-		short, long, dict backref
-	}
-
-	m := len(d) - startIndex
-	backrefs := make([]br, m)
-	Execute(m, func(start, end int) {
-		for i := start; i < end; i++ {
-			at := i + startIndex
-			backrefs[i].short = backref{bType: shortType, length: -1, address: -1}
-			dynamicBackRefType := dynamicBackrefType(at, compressor.level)
-			backrefs[i].long = backref{bType: dynamicBackRefType, length: -1, address: -1}
-			backrefs[i].dict = backref{bType: dictBackRefType, length: -1, address: -1}
-
-			minLen := -1
-			if !canEncodeSymbol(d[at]) {
-				minLen = 1
-			}
-			backrefs[i].dict.address, backrefs[i].dict.length = findBackRef(d, at, dictBackRefType, minLen, compressor.dictIndex, dictLen)
-			backrefs[i].long.bType = dynamicBackRefType
-			backrefs[i].long.address, backrefs[i].long.length = findBackRef(d, at, dynamicBackRefType, minLen, inputIndex, dictLen)
-			backrefs[i].short.address, backrefs[i].short.length = findBackRef(d, at, shortType, minLen, inputIndex, dictLen)
+	bestBackref := func(at int) (backref, int) {
+		if b, ok := cb.best(at); ok {
+			return b, b.savings()
 		}
-	})
 
-	// fillBackrefs := func(i int, minLen int) bool {
-	// 	bDict.address, bDict.length = findBackRef(d, i, dictBackRefType, minLen, compressor.dictIndex, dictLen)
-	// 	dynamicBackRefType := dynamicBackrefType(i, compressor.level)
-	// 	bLong.bType = dynamicBackRefType
-	// 	bLong.address, bLong.length = findBackRef(d, i, dynamicBackRefType, minLen, inputIndex, dictLen)
-	// 	bShort.address, bShort.length = findBackRef(d, i, shortType, minLen, inputIndex, dictLen)
+		bDict := backref{bType: dictType, length: -1, address: -1}
+		bLong := backref{bType: dynamicBackrefType(at, compressor.level), length: -1, address: -1}
+		bShort := backref{bType: shortType, length: -1, address: -1}
 
-	// 	return !(bDict.length == -1 && bLong.length == -1 && bShort.length == -1)
-	// }
-	bestBackref := func(at int) (*backref, int) {
-		i := at - startIndex
-		bDict := &backrefs[i].dict
-		bLong := &backrefs[i].long
-		bShort := &backrefs[i].short
+		// we haven't computed the backref yet
+		minLen := -1
+		if !canEncodeSymbol(d[at]) {
+			minLen = 1
+		}
+		bDict.address, bDict.length = findBackRef(d, at, dictType, minLen, compressor.dictIndex, dictLen)
+		bLong.address, bLong.length = findBackRef(d, at, bLong.bType, minLen, inputIndex, dictLen)
+		bShort.address, bShort.length = findBackRef(d, at, shortType, minLen, inputIndex, dictLen)
+
+		// we store the best backref in the circular buffer
+		var bestAtI backref
 
 		if bDict.length != -1 && bDict.savings() > bLong.savings() && bDict.savings() > bShort.savings() {
-			return bDict, bDict.savings()
+			bestAtI = bDict
+		} else if bShort.length != -1 && bShort.savings() > bLong.savings() {
+			bestAtI = bShort
+		} else {
+			bestAtI = bLong
 		}
-		if bShort.length != -1 && bShort.savings() > bLong.savings() {
-			return bShort, bShort.savings()
-		}
-		return bLong, bLong.savings()
+
+		cb.push(bestAtI, at)
+		return bestAtI, bestAtI.savings()
 	}
 
 	const minRepeatingBytes = 160
 	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		dynamicBackRefType := dynamicBackrefType(i, compressor.level)
-		for i+count < len(d) && count < dynamicBackRefType.maxLength && d[i] == d[i+count] {
+		for i+count < len(d) && count < shortType.maxLength && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
@@ -304,35 +284,33 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 				if !canEncodeSymbol(d[i]) {
 					// if this is a reserved symbol, it should be in the dictionary
 					// (this is a backref with len(1))
-					bDict := backref{bType: dictBackRefType, address: compressor.dictReservedIdx[d[i]], length: 1}
+					bDict := backref{
+						bType:   dictType,
+						address: compressor.dictReservedIdx[d[i]],
+						length:  1,
+					}
 					bDict.writeTo(w, i)
 				} else {
 					w.TryWriteByte(d[i])
 				}
 				i++
 				count--
-				dynamicBackRefType = dynamicBackrefType(i, compressor.level)
 				// we can now do a backref of length count-1 at i+1
 			} // else --> we do a backref of length count at i
 
-			bDynamic := backref{bType: dynamicBackRefType, address: i - 1, length: count}
-			bDynamic.writeTo(w, i)
+			bShort := backref{bType: shortType, address: i - 1, length: count}
+			bShort.writeTo(w, i)
 			i += count
 			continue
 		}
 
+		bestAtI, bestSavings := bestBackref(i)
 		if !canEncodeSymbol(d[i]) {
-			// we must find a backref.
-			best, _ := bestBackref(i)
-			// if s < 0 {
-			// 	// we didn't find a backref but can't write the symbol directly
-			// 	return i - startIndex, fmt.Errorf("could not find a backref at index %d", i)
-			// }
-			best.writeTo(w, i)
-			i += best.length
+			// at minima, we have a backref of length 1 in the dictionary
+			bestAtI.writeTo(w, i)
+			i += bestAtI.length
 			continue
 		}
-		bestAtI, bestSavings := bestBackref(i) // todo @tabaie measure savings in bits not bytes
 		if bestSavings < 0 {
 			// we didn't find a backref, let's write the symbol directly
 			w.TryWriteByte(d[i])
@@ -340,39 +318,25 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 			continue
 		}
 
+		// for the next few bytes, we will try to find a better backref
 		if i+1 < len(d) {
-			if newBest, newSavings := bestBackref(i + 1); newSavings > bestSavings {
+			if _, newSavings := bestBackref(i + 1); newSavings > bestSavings+1 {
 				// we found a better backref at i+1
 				w.TryWriteByte(d[i])
 				i++
+				continue
 
-				// then mark backref to be written at i+1
-				bestSavings = newSavings
-				bestAtI = newBest
-
-				// can we find an even better backref at i+2 ?
-				if canEncodeSymbol(d[i]) && i+1 < len(d) {
-					// we found an even better backref
-					if newBest, newSavings := bestBackref(i + 1); newSavings > bestSavings {
-						w.TryWriteByte(d[i])
-						i++
-
-						bestAtI = newBest
-					}
-				}
-			} else if i+2 < len(d) && canEncodeSymbol(d[i+1]) {
-				// maybe at i+2 ? (we already tried i+1)
-				if newBest, newSavings := bestBackref(i + 2); newSavings > bestSavings {
-					// we found a better backref
-					// write the symbol at i
-					w.TryWriteByte(d[i])
-					i++
-					w.TryWriteByte(d[i])
-					i++
-
-					// then emit the backref at i+2
-					bestAtI = newBest
-				}
+			}
+		}
+		if i+2 < len(d) && canEncodeSymbol(d[i+1]) {
+			// maybe at i+2 ? (we already tried i+1)
+			if _, newSavings := bestBackref(i + 2); newSavings > bestSavings+2 {
+				// we found a better backref
+				// write the symbol at i and i+1
+				w.TryWriteByte(d[i])
+				w.TryWriteByte(d[i+1])
+				i += 2
+				continue
 			}
 		}
 
@@ -381,6 +345,31 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 	}
 
 	return len(d) - startIndex, nil
+}
+
+type circularBuffer struct {
+	k           int
+	keys        [3]int
+	bestBackref [3]backref
+}
+
+func newCircularBuffer() *circularBuffer {
+	return &circularBuffer{keys: [3]int{-1, -1, -1}}
+}
+
+func (cb *circularBuffer) push(b backref, at int) {
+	cb.keys[cb.k] = at
+	cb.bestBackref[cb.k] = b
+	cb.k = (cb.k + 1) % 3
+}
+
+func (cb *circularBuffer) best(at int) (backref, bool) {
+	for i := 0; i < 3; i++ {
+		if cb.keys[i] == at {
+			return cb.bestBackref[i], true
+		}
+	}
+	return backref{}, false
 }
 
 func (compressor *Compressor) Reset() {
@@ -587,54 +576,4 @@ func (compressor *Compressor) appendInput(d []byte) error {
 	compressor.lastInLen = compressor.inBuf.Len()
 	compressor.inBuf.Write(d)
 	return nil
-}
-
-// Execute process in parallel the work function
-func Execute(nbIterations int, work func(int, int), maxCpus ...int) {
-
-	nbTasks := runtime.NumCPU()
-	if len(maxCpus) == 1 {
-		nbTasks = maxCpus[0]
-		if nbTasks < 1 {
-			nbTasks = 1
-		} else if nbTasks > 512 {
-			nbTasks = 512
-		}
-	}
-
-	if nbTasks == 1 {
-		// no go routines
-		work(0, nbIterations)
-		return
-	}
-
-	nbIterationsPerCpus := nbIterations / nbTasks
-
-	// more CPUs than tasks: a CPU will work on exactly one iteration
-	if nbIterationsPerCpus < 1 {
-		nbIterationsPerCpus = 1
-		nbTasks = nbIterations
-	}
-
-	var wg sync.WaitGroup
-
-	extraTasks := nbIterations - (nbTasks * nbIterationsPerCpus)
-	extraTasksOffset := 0
-
-	for i := 0; i < nbTasks; i++ {
-		wg.Add(1)
-		_start := i*nbIterationsPerCpus + extraTasksOffset
-		_end := _start + nbIterationsPerCpus
-		if extraTasks > 0 {
-			_end++
-			extraTasks--
-			extraTasksOffset++
-		}
-		go func() {
-			work(_start, _end)
-			wg.Done()
-		}()
-	}
-
-	wg.Wait()
 }
