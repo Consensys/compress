@@ -15,19 +15,19 @@ type refValue struct {
 
 var refValues = map[string]refValue{
 	"./testdata/blobs/1-1865800": {
-		lzssRatio: 4.18,
+		lzssRatio: 4.19,
 	},
 	"./testdata/blobs/1-goerli-3690632": {
 		lzssRatio: 24.42,
 	},
 	"./testdata/blobs/2-1865938": {
-		lzssRatio: 3.72,
+		lzssRatio: 3.73,
 	},
 	"./testdata/blobs/3-1866069": {
-		lzssRatio: 3.54,
+		lzssRatio: 3.55,
 	},
 	"./testdata/blobs/5-1128897": {
-		lzssRatio: 7.25,
+		lzssRatio: 7.26,
 	},
 }
 
