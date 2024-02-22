@@ -391,7 +391,7 @@ func min(a, b int) int {
 }
 
 func TestInvalidBackref(t *testing.T) {
-	shortType, _ := InitBackRefTypes(0, BestCompression)
+	shortType := NewShortBackrefType(BestCompression)
 
 	assert := require.New(t)
 
@@ -454,8 +454,7 @@ func TestCraftExpandingInput(t *testing.T) {
 }
 
 func craftExpandingInput(dict []byte, size int) []byte {
-	_, dictType := InitBackRefTypes(len(dict), BestCompression)
-	nbBytesExpandingBlock := dictType.nbBytesBackRef
+	const nbBytesExpandingBlock = 4 // TODO @gbotrel check that
 
 	// the following two methods convert between a byte slice and a number; just for convenient use as map keys and counters
 	bytesToNum := func(b []byte) uint64 {

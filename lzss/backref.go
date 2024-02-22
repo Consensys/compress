@@ -3,6 +3,7 @@ package lzss
 import (
 	"fmt"
 	"math"
+	"math/bits"
 
 	"github.com/icza/bitio"
 )
@@ -10,6 +11,11 @@ import (
 const (
 	MaxInputSize = 1 << 21 // 2Mb
 	MaxDictSize  = 1 << 22 // 4Mb
+)
+
+const (
+	SymbolDynamic byte = 0xFF
+	SymbolShort   byte = 0xFE
 )
 
 type BackrefType struct {
@@ -20,10 +26,36 @@ type BackrefType struct {
 	nbBytesBackRef int
 	maxAddress     int
 	maxLength      int
-	dictOnly       bool
+	dictLen        int
 }
 
-func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictOnly bool) BackrefType {
+func NewShortBackrefType(level Level) (short BackrefType) {
+	wordAlign := func(a int) uint8 {
+		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
+	}
+	if level == NoCompression {
+		wordAlign = func(a int) uint8 {
+			return uint8(a)
+		}
+	}
+	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefLenLog2, 0)
+	return
+}
+
+func NewDynamicBackrefType(dictLen, addressableBytes int, level Level) (dynamic BackrefType) {
+	wordAlign := func(a int) uint8 {
+		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
+	}
+	if level == NoCompression {
+		wordAlign = func(a int) uint8 {
+			return uint8(a)
+		}
+	}
+	bound := bits.Len(uint(addressableBytes + dictLen))
+	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefLenLog2, dictLen)
+}
+
+func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictLen int) BackrefType {
 	return BackrefType{
 		Delimiter:      symbol,
 		NbBitsAddress:  nbBitsAddress,
@@ -32,15 +64,9 @@ func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictOnly boo
 		nbBytesBackRef: int(8+nbBitsAddress+nbBitsLength+7) / 8,
 		maxAddress:     1 << nbBitsAddress,
 		maxLength:      1 << nbBitsLength,
-		dictOnly:       dictOnly,
+		dictLen:        dictLen,
 	}
 }
-
-const (
-	SymbolDict    byte = 0xFF
-	SymbolDynamic byte = 0xFE
-	SymbolShort   byte = 0xFD
-)
 
 type backref struct {
 	address int
@@ -53,10 +79,7 @@ type backref struct {
 func (b *backref) writeTo(w writer, i int) {
 	w.TryWriteByte(b.bType.Delimiter)
 	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
-	addrToWrite := b.address
-	if !b.bType.dictOnly {
-		addrToWrite = i - b.address - 1
-	}
+	addrToWrite := (i + b.bType.dictLen) - b.address - 1
 	w.TryWriteBits(uint64(addrToWrite), b.bType.NbBitsAddress)
 }
 
@@ -65,10 +88,7 @@ func (b *backref) readFrom(r *bitio.Reader) error {
 	b.length = int(n) + 1
 
 	n = r.TryReadBits(b.bType.NbBitsAddress)
-	b.address = int(n)
-	if !b.bType.dictOnly {
-		b.address++
-	}
+	b.address = int(n) + 1
 
 	if r.TryError != nil {
 		return r.TryError

@@ -18,7 +18,7 @@ var refValues = map[string]refValue{
 		lzssRatio: 4.18,
 	},
 	"./testdata/blobs/1-goerli-3690632": {
-		lzssRatio: 24.49,
+		lzssRatio: 24.42,
 	},
 	"./testdata/blobs/2-1865938": {
 		lzssRatio: 3.72,

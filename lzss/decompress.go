@@ -33,8 +33,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	// init dict and backref types
 	dict = AugmentDict(dict)
 
-	shortType, dictType := InitBackRefTypes(len(dict), header.Level)
-	bDict := backref{bType: dictType}
+	shortType := NewShortBackrefType(header.Level)
 	bShort := backref{bType: shortType}
 
 	var out bytes.Buffer
@@ -52,32 +51,29 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 			}
 			for i := 0; i < bShort.length; i++ {
 				if bShort.address > out.Len() {
-					return nil, fmt.Errorf("invalid short backref %v - output buffer is only %d bytes long", bShort, out.Len())
+					return nil, fmt.Errorf("invalid short backref %+v - output buffer is only %d bytes long", bShort, out.Len())
 				}
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
 		case SymbolDynamic:
 			// long back ref
-			dynamicbr := InitDynamicBackref(out.Len(), header.Level)
+			dynamicbr := NewDynamicBackrefType(len(dict), out.Len(), header.Level)
 			bDynamic := backref{bType: dynamicbr}
 			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}
-			for i := 0; i < bDynamic.length; i++ {
-				if bDynamic.address > out.Len() {
-					return nil, fmt.Errorf("invalid dynamic backref %v - output buffer is only %d bytes long", bDynamic, out.Len())
+			if bDynamic.address > out.Len() {
+				dictStart := len(dict) - (bDynamic.address - out.Len())
+				if dictStart < 0 || dictStart > len(dict) || dictStart+bDynamic.length > len(dict) {
+					return nil, fmt.Errorf("invalid dynamic backref %+v - dict is only %d bytes long; dictStart = %d", bDynamic, len(dict), dictStart)
 				}
-				out.WriteByte(out.Bytes()[out.Len()-bDynamic.address])
+				out.Write(dict[dictStart : dictStart+bDynamic.length])
+			} else {
+				for i := 0; i < bDynamic.length; i++ {
+					out.WriteByte(out.Bytes()[out.Len()-bDynamic.address])
+				}
 			}
-		case SymbolDict:
-			// dict back ref
-			if err := bDict.readFrom(in); err != nil {
-				return nil, err
-			}
-			if bDict.address > len(dict) || bDict.address+bDict.length > len(dict) {
-				return nil, fmt.Errorf("invalid dict backref %v - dict is only %d bytes long", bDict, len(dict))
-			}
-			out.Write(dict[bDict.address : bDict.address+bDict.length])
+
 		default:
 			out.WriteByte(s)
 		}
@@ -125,9 +121,8 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 
 	// init dict and backref types
 	dict = AugmentDict(dict)
-	shortBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
+	shortBackRefType := NewShortBackrefType(header.Level)
 
-	bDict := backref{bType: dictBackRefType}
 	bShort := backref{bType: shortBackRefType}
 
 	var out bytes.Buffer
@@ -158,9 +153,6 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 
 	emitRef := func(b *backref) {
 		addr := out.Len() - b.length - b.address // this happens post writing out the backref
-		if b.bType == dictBackRefType {
-			addr = b.address
-		}
 		res = append(res, CompressionPhrase{
 			Type:              b.bType.Delimiter,
 			Length:            b.length,
@@ -190,7 +182,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolDynamic:
 			emitLiteralIfNecessary()
 			// long back ref
-			bDynamic := backref{bType: InitDynamicBackref(out.Len(), header.Level)}
+			bDynamic := backref{bType: NewDynamicBackrefType(len(dict), out.Len(), header.Level)}
 			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}
@@ -198,14 +190,6 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 				out.WriteByte(out.Bytes()[out.Len()-bDynamic.address])
 			}
 			emitRef(&bDynamic)
-		case SymbolDict:
-			emitLiteralIfNecessary()
-			// dict back ref
-			if err := bDict.readFrom(in); err != nil {
-				return nil, err
-			}
-			out.Write(dict[bDict.address : bDict.address+bDict.length])
-			emitRef(&bDict)
 		default:
 			if literalCopyStart == -1 {
 				literalCopyStart = out.Len()
@@ -226,8 +210,6 @@ func (c CompressionPhrases) ToCSV() []byte {
 			b.WriteString("short,")
 		case SymbolDynamic:
 			b.WriteString("long,")
-		case SymbolDict:
-			b.WriteString("dict,")
 		case 0:
 			b.WriteString("literal,")
 		default:
