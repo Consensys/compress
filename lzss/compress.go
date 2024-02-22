@@ -54,8 +54,8 @@ const (
 )
 
 const (
-	headerBitLen     = 24 // 3 bytes
-	maxBackrefBitLen = 8  // max length of a backref in bits
+	headerBitLen  = 24 // 3 bytes
+	maxBackrefLen = 8  // max length of a backref in bytes
 )
 
 // NewCompressor returns a new compressor with the given dictionary
@@ -131,8 +131,8 @@ func InitBackRefTypes(dictLen int, level Level) (short, dict BackrefType) {
 			return uint8(a)
 		}
 	}
-	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefBitLen, false)
-	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), maxBackrefBitLen, true)
+	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefLen, false)
+	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), maxBackrefLen, true)
 	return
 }
 
@@ -149,7 +149,7 @@ func InitDynamicBackref(addressableBytes int, level Level) (dynamic BackrefType)
 	if bound > 20 {
 		bound = 20
 	}
-	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefBitLen, false)
+	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefLen, false)
 }
 
 // The compressor cannot recover from a Write error. It must be Reset before writing again
@@ -246,7 +246,7 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		for i+count < len(d) && count < (1<<maxBackrefBitLen) && d[i] == d[i+count] {
+		for i+count < len(d) && count < (1<<maxBackrefLen) && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
