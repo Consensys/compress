@@ -9,13 +9,15 @@ import (
 )
 
 const (
-	MaxInputSize = 1 << 21 // 2Mb
+	MaxInputSize = 1 << 22 // 4Mb
 	MaxDictSize  = 1 << 22 // 4Mb
 )
 
 const (
-	SymbolDynamic byte = 0xFF
-	SymbolShort   byte = 0xFE
+	SymbolDynamic     byte = 0xFF
+	SymbolShort       byte = 0xFE
+	maxBackrefLenLog2      = 8  // max length of a backref in bytes (1 << 8 = 256 bytes)
+	shortAddrBits          = 14 // number of bits to encode the address in a short backref
 )
 
 type BackrefType struct {
@@ -38,7 +40,7 @@ func NewShortBackrefType(level Level) (short BackrefType) {
 			return uint8(a)
 		}
 	}
-	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefLenLog2, 0)
+	short = newBackRefType(SymbolShort, wordAlign(shortAddrBits), maxBackrefLenLog2, 0)
 	return
 }
 

@@ -53,8 +53,7 @@ const (
 )
 
 const (
-	headerBitLen      = 24 // 3 bytes
-	maxBackrefLenLog2 = 8  // max length of a backref in bytes (1 << 8 = 256 bytes)
+	headerBitLen = 24 // 3 bytes
 )
 
 // NewCompressor returns a new compressor with the given dictionary
