@@ -52,10 +52,6 @@ const (
 	BestSnarkDecompression Level = 8
 )
 
-const (
-	headerBitLen = 24 // 3 bytes
-)
-
 // NewCompressor returns a new compressor with the given dictionary
 // The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
 // The level determines the bit alignment of the compressed data. The "higher" the level, the better the compression ratio but the more constraints on the decompressor.
@@ -373,11 +369,11 @@ func (compressor *Compressor) Revert() error {
 // ConsiderBypassing switches to NoCompression if we get significant expansion instead of compression
 func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 
-	if compressor.outBuf.Len() > compressor.inBuf.Len()+headerBitLen/8 {
+	if compressor.outBuf.Len() > compressor.inBuf.Len()+HeaderSize {
 		// compression was not worth it
 		compressor.level = NoCompression
 		compressor.nbSkippedBits = 0
-		compressor.lastOutLen = compressor.lastInLen + headerBitLen/8
+		compressor.lastOutLen = compressor.lastInLen + HeaderSize
 		compressor.lastNbSkippedBits = 0
 		compressor.justBypassed = true
 		compressor.outBuf.Reset()
