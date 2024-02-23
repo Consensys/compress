@@ -7,7 +7,7 @@ import (
 
 const (
 	// Version is the current release version of the compressor.
-	Version    = 0
+	Version    = 1
 	HeaderSize = 3
 )
 
