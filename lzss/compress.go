@@ -201,6 +201,8 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 	const minRepeatingBytes = 160
 	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
+		// note that since all our backref have max len of (1<<maxBackrefLenLog2)
+		// we stop if we have a series of repeating bytes of length (1<<maxBackrefLenLog2)
 		count := 0
 		for i+count < len(d) && count < (1<<maxBackrefLenLog2) && d[i] == d[i+count] {
 			count++
