@@ -14,7 +14,7 @@ import (
 )
 
 func testCompressionRoundTrip(t *testing.T, d []byte) {
-	compressor, err := NewCompressor(getDictionary(), BestCompression)
+	compressor, err := NewCompressor(getDictionary())
 	require.NoError(t, err)
 
 	c, err := compressor.Compress(d)
@@ -44,7 +44,7 @@ func TestNoCompressionAttempt(t *testing.T) {
 
 	d := []byte{253, 254, 255}
 
-	compressor, err := NewCompressor(getDictionary(), NoCompression)
+	compressor, err := NewCompressor(getDictionary())
 	require.NoError(t, err)
 
 	c, err := compressor.Compress(d)
@@ -69,22 +69,12 @@ func Test8ZerosAfterNonzero(t *testing.T) { // probably won't happen in our call
 // Fuzz test the compression / decompression
 func FuzzCompress(f *testing.F) {
 
-	f.Fuzz(func(t *testing.T, input, dict []byte, cMode uint8) {
+	f.Fuzz(func(t *testing.T, input, dict []byte) {
 		if len(input) > MaxInputSize {
 			t.Skip("input too large")
 		}
 		if len(dict) > MaxDictSize {
 			t.Skip("dict too large")
-		}
-		var level Level
-		if cMode&2 == 2 {
-			level = 2
-		} else if cMode&4 == 4 {
-			level = 4
-		} else if cMode&8 == 8 {
-			level = 8
-		} else {
-			level = BestCompression
 		}
 
 		checkDecompressResult := func(compressedBytes []byte) {
@@ -94,7 +84,6 @@ func FuzzCompress(f *testing.F) {
 			}
 
 			if !bytes.Equal(input, decompressedBytes) {
-				t.Log("compression level:", level)
 				t.Log("original bytes:", hex.EncodeToString(input))
 				t.Log("decompressed bytes:", hex.EncodeToString(decompressedBytes))
 				t.Log("dict", hex.EncodeToString(dict))
@@ -103,7 +92,7 @@ func FuzzCompress(f *testing.F) {
 		}
 
 		// test compress (i.e write all the bytes)
-		compressor, err := NewCompressor(dict, level)
+		compressor, err := NewCompressor(dict)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +104,7 @@ func FuzzCompress(f *testing.F) {
 		checkDecompressResult(compressedBytes)
 
 		// test write byte by byte
-		compressor, err = NewCompressor(dict, level)
+		compressor, err = NewCompressor(dict)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +116,7 @@ func FuzzCompress(f *testing.F) {
 		checkDecompressResult(compressor.Bytes())
 
 		// test write byte by byte with revert
-		compressor, err = NewCompressor(dict, level)
+		compressor, err = NewCompressor(dict)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +130,7 @@ func FuzzCompress(f *testing.F) {
 		}
 
 		// test write byte by byte with revert and write again
-		compressor, err = NewCompressor(dict, level)
+		compressor, err = NewCompressor(dict)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,18 +193,7 @@ func FuzzCompressedSize(f *testing.F) {
 		if len(dict) > MaxDictSize {
 			t.Skip("dict too large")
 		}
-		var level Level
-		if cMode&2 == 2 {
-			level = 2
-		} else if cMode&4 == 4 {
-			level = 4
-		} else if cMode&8 == 8 {
-			level = 8
-		} else {
-			level = BestCompression
-		}
-
-		compressor, err := NewCompressor(dict, level)
+		compressor, err := NewCompressor(dict)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,7 +236,7 @@ func TestAverageBatch(t *testing.T) {
 	assert.NoError(err)
 
 	dict := getDictionary()
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	assert.NoError(err)
 
 	lzssRes, err := compresslzss_v1(compressor, data)
@@ -287,7 +265,7 @@ func BenchmarkAverageBatch(b *testing.B) {
 
 	dict := getDictionary()
 
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -347,7 +325,7 @@ func TestRevert(t *testing.T) {
 	assert.NoError(err)
 
 	dict := getDictionary()
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	assert.NoError(err)
 
 	const (
@@ -391,11 +369,11 @@ func min(a, b int) int {
 }
 
 func TestInvalidBackref(t *testing.T) {
-	shortType := NewShortBackrefType(BestCompression)
+	shortType := NewShortBackrefType()
 
 	assert := require.New(t)
 
-	compressor, err := NewCompressor([]byte{}, BestCompression)
+	compressor, err := NewCompressor([]byte{})
 	assert.NoError(err)
 
 	c, err := compressor.Compress([]byte{})
@@ -438,7 +416,7 @@ func TestCraftExpandingInput(t *testing.T) {
 
 	// craft an input we know will expand
 	d := craftExpandingInput(dict, 100000)
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	assert.NoError(err)
 	c, err := compressor.Compress(d)
 	lenC := len(c)
@@ -512,7 +490,7 @@ func TestRevertAfterBypass(t *testing.T) {
 	assert.NoError(t, err)
 
 	dict := getDictionary()
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	assert.NoError(t, err)
 
 	_, err = compressor.Write(d[:block1Size])
@@ -550,7 +528,7 @@ func BenchmarkCompressNomial100kB(b *testing.B) {
 	}
 
 	dict := getDictionary()
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -570,7 +548,7 @@ func BenchmarkCompressRepeated100kB(b *testing.B) {
 	data := make([]byte, 100*1024)
 
 	dict := getDictionary()
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -601,7 +579,7 @@ func BenchmarkCompressedSize(b *testing.B) {
 
 	dict := getDictionary()
 
-	compressor, err := NewCompressor(dict, BestCompression)
+	compressor, err := NewCompressor(dict)
 	if err != nil {
 		b.Fatal(err)
 	}

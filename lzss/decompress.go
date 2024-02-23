@@ -33,7 +33,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	// init dict and backref types
 	dict = AugmentDict(dict)
 
-	shortType := NewShortBackrefType(header.Level)
+	shortType := NewShortBackrefType()
 	bShort := backref{bType: shortType}
 
 	var out bytes.Buffer
@@ -57,7 +57,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 			}
 		case SymbolDynamic:
 			// long back ref
-			dynamicbr := NewDynamicBackrefType(len(dict), out.Len(), header.Level)
+			dynamicbr := NewDynamicBackrefType(len(dict), out.Len())
 			bDynamic := backref{bType: dynamicbr}
 			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
@@ -121,7 +121,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 
 	// init dict and backref types
 	dict = AugmentDict(dict)
-	shortBackRefType := NewShortBackrefType(header.Level)
+	shortBackRefType := NewShortBackrefType()
 
 	bShort := backref{bType: shortBackRefType}
 
@@ -182,7 +182,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolDynamic:
 			emitLiteralIfNecessary()
 			// long back ref
-			bDynamic := backref{bType: NewDynamicBackrefType(len(dict), out.Len(), header.Level)}
+			bDynamic := backref{bType: NewDynamicBackrefType(len(dict), out.Len())}
 			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}

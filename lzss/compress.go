@@ -38,24 +38,14 @@ type Compressor struct {
 type Level uint8
 
 const (
-	NoCompression Level = 0
-	// BestCompression allows the compressor to produce a stream of bit-level granularity,
-	// giving the compressor this freedom helps it achieve better compression ratios but
-	// will impose a high number of constraints on the SNARK decompressor
+	NoCompression   Level = 0
 	BestCompression Level = 1
-
-	GoodCompression        Level = 2
-	GoodSnarkDecompression Level = 4
-
-	// BestSnarkDecompression forces the compressor to produce byte-aligned output.
-	// It is convenient and efficient for the SNARK decompressor but can hurt the compression ratio significantly
-	BestSnarkDecompression Level = 8
 )
 
 // NewCompressor returns a new compressor with the given dictionary
 // The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
 // The level determines the bit alignment of the compressed data. The "higher" the level, the better the compression ratio but the more constraints on the decompressor.
-func NewCompressor(dict []byte, level Level) (*Compressor, error) {
+func NewCompressor(dict []byte) (*Compressor, error) {
 	dict = AugmentDict(dict)
 	if len(dict) > MaxDictSize {
 		return nil, fmt.Errorf("dict size must be <= %d", MaxDictSize)
@@ -82,11 +72,8 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	c.outBuf.Grow(MaxInputSize)
 	c.inBuf.Grow(1 << 19)
 	c.bw = bitio.NewWriter(&c.outBuf)
-	if level != NoCompression {
-		// if we don't compress we don't need the dict.
-		c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
-	}
-	c.intendedLevel = level
+	c.intendedLevel = BestCompression
+	c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
 	c.Reset()
 	return c, nil
 }
@@ -164,7 +151,7 @@ type writer interface {
 func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputIndex *suffixarray.Index) (n int, err error) {
 	dictLen := len(compressor.dictData)
 
-	shortType := NewShortBackrefType(compressor.level)
+	shortType := NewShortBackrefType()
 
 	// we use a circular buffer to store the last 3 backrefs
 	cb := newCircularBuffer()
@@ -174,7 +161,7 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 			return b, b.savings()
 		}
 
-		bDynamic := backref{bType: NewDynamicBackrefType(dictLen, at, compressor.level), length: -1, address: -1}
+		bDynamic := backref{bType: NewDynamicBackrefType(dictLen, at), length: -1, address: -1}
 		bShort := backref{bType: shortType, length: -1, address: -1}
 
 		// we haven't computed the backref yet
@@ -219,7 +206,7 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 					// if this is a reserved symbol, it should be in the dictionary
 					// (this is a backref with len(1))
 					bDict := backref{
-						bType:   NewDynamicBackrefType(dictLen, i, compressor.level),
+						bType:   NewDynamicBackrefType(dictLen, i),
 						address: compressor.dictReservedIdx[d[i]],
 						length:  1,
 					}
@@ -233,7 +220,7 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 			} // else --> we do a backref of length count at i
 
 			bShort := backref{bType: shortType, address: i - 1, length: count}
-			bDynamic := backref{bType: NewDynamicBackrefType(dictLen, i, compressor.level), address: dictLen + i - 1, length: count}
+			bDynamic := backref{bType: NewDynamicBackrefType(dictLen, i), address: dictLen + i - 1, length: count}
 			if bShort.savings() > bDynamic.savings() {
 				bShort.writeTo(w, i)
 			} else {

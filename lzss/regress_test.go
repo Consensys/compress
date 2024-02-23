@@ -36,7 +36,7 @@ func TestReferenceBlobs(t *testing.T) {
 	for filename, ref := range refValues {
 		t.Run(filename, func(t *testing.T) {
 			assert := require.New(t)
-			compressor, err := NewCompressor(dict, BestCompression)
+			compressor, err := NewCompressor(dict)
 			assert.NoError(err)
 
 			// read filename
