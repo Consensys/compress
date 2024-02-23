@@ -14,6 +14,7 @@ import (
 )
 
 func testCompressionRoundTrip(t *testing.T, d []byte) {
+	t.Helper()
 	compressor, err := NewCompressor(getDictionary())
 	require.NoError(t, err)
 
@@ -359,13 +360,6 @@ func TestRevert(t *testing.T) {
 		compressor.Reset()
 		i0 = i
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func TestInvalidBackref(t *testing.T) {

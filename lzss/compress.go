@@ -499,13 +499,6 @@ func findBackRef(data []byte, i int, bType BackrefType, minLength int, dataIndex
 	return
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (compressor *Compressor) appendInput(d []byte) error {
 	if compressor.inBuf.Len()+len(d) > MaxInputSize {
 		return fmt.Errorf("input size must be <= %d", MaxInputSize)
