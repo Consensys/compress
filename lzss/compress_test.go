@@ -391,46 +391,42 @@ func min(a, b int) int {
 }
 
 func TestInvalidBackref(t *testing.T) {
-	data := make([]byte, 100)
-	for i := 0; i < 32; i++ {
-		data[i] = 1
-	}
-	for i := 32; i < 64; i++ {
-		data[i] = 2
-	}
-	for i := 64; i < 100; i++ {
-		data[i] = 3
-	}
+	shortType, _ := InitBackRefTypes(0, BestCompression)
+
 	assert := require.New(t)
 
 	compressor, err := NewCompressor([]byte{}, BestCompression)
 	assert.NoError(err)
 
-	c, err := compressor.Compress(data)
+	c, err := compressor.Compress([]byte{})
 	assert.NoError(err)
 
-	_, err = Decompress(c, []byte{})
-	assert.NoError(err)
+	// we should have the header only here.
+	assert.Equal(len(c), HeaderSize)
 
-	// c[:HeaderSize] is the header
-	// c[HeaderSize] is the first byte of the compressed data --> should be a 1
-	assert.Equal(byte(1), c[HeaderSize])
-
-	// then we should have a backref to the first 1
-	assert.Equal(byte(SymbolShort), c[HeaderSize+1])
-
-	shortBackref, _, _ := InitBackRefTypes(0, BestCompression)
-
-	sbr := backref{bType: shortBackref}
-
-	err = sbr.readFrom(bitio.NewReader(bytes.NewReader(c[HeaderSize+1:])))
-	assert.NoError(err)
-
-	sbr.address = 255 // should be invalid
+	// let's write a short back ref with a valid address and length
+	c = append(c, byte(1))
+	sbr := backref{bType: shortType, address: 0, length: 5}
 	var buf bytes.Buffer
-	sbr.writeTo(bitio.NewWriter(&buf), 0)
+	w := bitio.NewWriter(&buf)
+	sbr.writeTo(w, 1)
+	_, err = w.Align()
+	assert.NoError(err)
+	c = append(c, buf.Bytes()...)
 
-	copy(c[HeaderSize+1:], buf.Bytes())
+	// decompress and check that we have what we expect
+	decompressed, err := Decompress(c, []byte{})
+	assert.NoError(err)
+	assert.Equal([]byte{1, 1, 1, 1, 1, 1}, decompressed)
+
+	// now let's do the same thing but with an invalid address
+	c = c[:HeaderSize]
+	buf.Reset()
+	sbr.address = 255 // should be invalid
+	sbr.writeTo(w, 1)
+	_, err = w.Align()
+	assert.NoError(err)
+	c = append(c, buf.Bytes()...)
 
 	_, err = Decompress(c, []byte{})
 	assert.Error(err)
@@ -458,8 +454,8 @@ func TestCraftExpandingInput(t *testing.T) {
 }
 
 func craftExpandingInput(dict []byte, size int) []byte {
-	_, _, dRefType := InitBackRefTypes(len(dict), BestCompression)
-	nbBytesExpandingBlock := dRefType.nbBytesBackRef
+	_, dictType := InitBackRefTypes(len(dict), BestCompression)
+	nbBytesExpandingBlock := dictType.nbBytesBackRef
 
 	// the following two methods convert between a byte slice and a number; just for convenient use as map keys and counters
 	bytesToNum := func(b []byte) uint64 {

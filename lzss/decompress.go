@@ -32,11 +32,10 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 
 	// init dict and backref types
 	dict = AugmentDict(dict)
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
 
-	bDict := backref{bType: dictBackRefType}
-	bShort := backref{bType: shortBackRefType}
-	bLong := backref{bType: longBackRefType}
+	shortType, dictType := InitBackRefTypes(len(dict), header.Level)
+	bDict := backref{bType: dictType}
+	bShort := backref{bType: shortType}
 
 	var out bytes.Buffer
 	out.Grow(len(data) * 7)
@@ -57,16 +56,18 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 				}
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
-		case SymbolLong:
+		case SymbolDynamic:
 			// long back ref
-			if err := bLong.readFrom(in); err != nil {
+			dynamicbr := InitDynamicBackref(out.Len(), header.Level)
+			bDynamic := backref{bType: dynamicbr}
+			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}
-			for i := 0; i < bLong.length; i++ {
-				if bLong.address > out.Len() {
-					return nil, fmt.Errorf("invalid long backref %v - output buffer is only %d bytes long", bLong, out.Len())
+			for i := 0; i < bDynamic.length; i++ {
+				if bDynamic.address > out.Len() {
+					return nil, fmt.Errorf("invalid dynamic backref %v - output buffer is only %d bytes long", bDynamic, out.Len())
 				}
-				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
+				out.WriteByte(out.Bytes()[out.Len()-bDynamic.address])
 			}
 		case SymbolDict:
 			// dict back ref
@@ -124,11 +125,10 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 
 	// init dict and backref types
 	dict = AugmentDict(dict)
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
+	shortBackRefType, dictBackRefType := InitBackRefTypes(len(dict), header.Level)
 
 	bDict := backref{bType: dictBackRefType}
 	bShort := backref{bType: shortBackRefType}
-	bLong := backref{bType: longBackRefType}
 
 	var out bytes.Buffer
 	out.Grow(len(c) * 7)
@@ -187,16 +187,17 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 				out.WriteByte(out.Bytes()[out.Len()-bShort.address])
 			}
 			emitRef(&bShort)
-		case SymbolLong:
+		case SymbolDynamic:
 			emitLiteralIfNecessary()
 			// long back ref
-			if err := bLong.readFrom(in); err != nil {
+			bDynamic := backref{bType: InitDynamicBackref(out.Len(), header.Level)}
+			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}
-			for i := 0; i < bLong.length; i++ {
-				out.WriteByte(out.Bytes()[out.Len()-bLong.address])
+			for i := 0; i < bDynamic.length; i++ {
+				out.WriteByte(out.Bytes()[out.Len()-bDynamic.address])
 			}
-			emitRef(&bLong)
+			emitRef(&bDynamic)
 		case SymbolDict:
 			emitLiteralIfNecessary()
 			// dict back ref
@@ -223,7 +224,7 @@ func (c CompressionPhrases) ToCSV() []byte {
 		switch phrase.Type {
 		case SymbolShort:
 			b.WriteString("short,")
-		case SymbolLong:
+		case SymbolDynamic:
 			b.WriteString("long,")
 		case SymbolDict:
 			b.WriteString("dict,")

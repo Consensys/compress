@@ -54,8 +54,8 @@ const (
 )
 
 const (
-	headerBitLen        = 24
-	longBrAddressNbBits = 19
+	headerBitLen  = 24 // 3 bytes
+	maxBackrefLen = 8  // max length of a backref in bytes
 )
 
 // NewCompressor returns a new compressor with the given dictionary
@@ -75,10 +75,10 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	for i, b := range dict {
 		if b == SymbolDict {
 			c.dictReservedIdx[SymbolDict] = i
+		} else if b == SymbolDynamic {
+			c.dictReservedIdx[SymbolDynamic] = i
 		} else if b == SymbolShort {
 			c.dictReservedIdx[SymbolShort] = i
-		} else if b == SymbolLong {
-			c.dictReservedIdx[SymbolLong] = i
 		} else {
 			continue
 		}
@@ -88,7 +88,7 @@ func NewCompressor(dict []byte, level Level) (*Compressor, error) {
 	}
 
 	c.outBuf.Grow(MaxInputSize)
-	c.inBuf.Grow(1 << longBrAddressNbBits)
+	c.inBuf.Grow(1 << 19)
 	c.bw = bitio.NewWriter(&c.outBuf)
 	if level != NoCompression {
 		// if we don't compress we don't need the dict.
@@ -109,7 +109,7 @@ func AugmentDict(dict []byte) []byte {
 			found |= 0b001
 		} else if b == SymbolShort {
 			found |= 0b010
-		} else if b == SymbolLong {
+		} else if b == SymbolDynamic {
 			found |= 0b100
 		} else {
 			continue
@@ -119,10 +119,10 @@ func AugmentDict(dict []byte) []byte {
 		}
 	}
 
-	return append(dict, SymbolDict, SymbolShort, SymbolLong)
+	return append(dict, SymbolDict, SymbolShort, SymbolDynamic)
 }
 
-func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) {
+func InitBackRefTypes(dictLen int, level Level) (short, dict BackrefType) {
 	wordAlign := func(a int) uint8 {
 		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
 	}
@@ -131,10 +131,25 @@ func InitBackRefTypes(dictLen int, level Level) (short, long, dict BackrefType) 
 			return uint8(a)
 		}
 	}
-	short = newBackRefType(SymbolShort, wordAlign(14), 8, false)
-	long = newBackRefType(SymbolLong, wordAlign(longBrAddressNbBits), 8, false)
-	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), 8, true)
+	short = newBackRefType(SymbolShort, wordAlign(14), maxBackrefLen, false)
+	dict = newBackRefType(SymbolDict, wordAlign(bits.Len(uint(dictLen))), maxBackrefLen, true)
 	return
+}
+
+func InitDynamicBackref(addressableBytes int, level Level) (dynamic BackrefType) {
+	wordAlign := func(a int) uint8 {
+		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
+	}
+	if level == NoCompression {
+		wordAlign = func(a int) uint8 {
+			return uint8(a)
+		}
+	}
+	bound := bits.Len(uint(addressableBytes))
+	if bound > 20 {
+		bound = 20
+	}
+	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefLen, false)
 }
 
 // The compressor cannot recover from a Write error. It must be Reset before writing again
@@ -188,34 +203,50 @@ type writer interface {
 // note that this is meant to be stateless and not modify the compressor object.
 func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputIndex *suffixarray.Index) (n int, err error) {
 	dictLen := len(compressor.dictData)
-	// initialize bit writer & backref types
-	shortBackRefType, longBackRefType, dictBackRefType := InitBackRefTypes(dictLen, compressor.level)
 
-	bDict := backref{bType: dictBackRefType, length: -1, address: -1}
-	bShort := backref{bType: shortBackRefType, length: -1, address: -1}
-	bLong := backref{bType: longBackRefType, length: -1, address: -1}
+	shortType, dictType := InitBackRefTypes(dictLen, compressor.level)
 
-	fillBackrefs := func(i int, minLen int) bool {
-		bDict.address, bDict.length = findBackRef(d, i, dictBackRefType, minLen, compressor.dictIndex, dictLen)
-		bShort.address, bShort.length = findBackRef(d, i, shortBackRefType, minLen, inputIndex, dictLen)
-		bLong.address, bLong.length = findBackRef(d, i, longBackRefType, minLen, inputIndex, dictLen)
-		return !(bDict.length == -1 && bShort.length == -1 && bLong.length == -1)
-	}
-	bestBackref := func() (backref, int) {
-		if bDict.length != -1 && bDict.savings() > bShort.savings() && bDict.savings() > bLong.savings() {
-			return bDict, bDict.savings()
+	// we use a circular buffer to store the last 3 backrefs
+	cb := newCircularBuffer()
+
+	bestBackref := func(at int) (backref, int) {
+		if b, ok := cb.best(at); ok {
+			return b, b.savings()
 		}
-		if bShort.length != -1 && bShort.savings() > bLong.savings() {
-			return bShort, bShort.savings()
+
+		bDict := backref{bType: dictType, length: -1, address: -1}
+		bDynamic := backref{bType: InitDynamicBackref(at, compressor.level), length: -1, address: -1}
+		bShort := backref{bType: shortType, length: -1, address: -1}
+
+		// we haven't computed the backref yet
+		minLen := -1
+		if !canEncodeSymbol(d[at]) {
+			minLen = 1
 		}
-		return bLong, bLong.savings()
+
+		bShort.address, bShort.length = findBackRef(d, at, shortType, minLen, inputIndex, dictLen)
+		bDict.address, bDict.length = findBackRef(d, at, dictType, minLen, compressor.dictIndex, dictLen)
+		bDynamic.address, bDynamic.length = findBackRef(d, at, bDynamic.bType, minLen, inputIndex, dictLen)
+
+		// we store the best backref in the circular buffer
+		var bestAtI backref
+		if bDict.length != -1 && bDict.savings() > bDynamic.savings() && bDict.savings() > bShort.savings() {
+			bestAtI = bDict
+		} else if bShort.length != -1 && bShort.savings() > bDynamic.savings() {
+			bestAtI = bShort
+		} else {
+			bestAtI = bDynamic
+		}
+
+		cb.push(bestAtI, at)
+		return bestAtI, bestAtI.savings()
 	}
 
 	const minRepeatingBytes = 160
 	for i := startIndex; i < len(d); {
 		// if we have a series of repeating bytes, we can do "RLE" using a short backref
 		count := 0
-		for i+count < len(d) && count < shortBackRefType.maxLength && d[i] == d[i+count] {
+		for i+count < len(d) && count < (1<<maxBackrefLen) && d[i] == d[i+count] {
 			count++
 		}
 		if count >= minRepeatingBytes {
@@ -229,7 +260,11 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 				if !canEncodeSymbol(d[i]) {
 					// if this is a reserved symbol, it should be in the dictionary
 					// (this is a backref with len(1))
-					bDict.address, bDict.length = compressor.dictReservedIdx[d[i]], 1
+					bDict := backref{
+						bType:   dictType,
+						address: compressor.dictReservedIdx[d[i]],
+						length:  1,
+					}
 					bDict.writeTo(w, i)
 				} else {
 					w.TryWriteByte(d[i])
@@ -239,71 +274,49 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 				// we can now do a backref of length count-1 at i+1
 			} // else --> we do a backref of length count at i
 
-			bShort.address = i - 1
-			bShort.length = count
-			bShort.writeTo(w, i)
+			bShort := backref{bType: shortType, address: i - 1, length: count}
+			bDynamic := backref{bType: InitDynamicBackref(i, compressor.level), address: i - 1, length: count}
+			if bShort.savings() > bDynamic.savings() {
+				bShort.writeTo(w, i)
+			} else {
+				bDynamic.writeTo(w, i)
+			}
 			i += count
 			continue
 		}
 
+		bestAtI, bestSavings := bestBackref(i)
 		if !canEncodeSymbol(d[i]) {
-			// we must find a backref.
-			if !fillBackrefs(i, 1) {
-				// we didn't find a backref but can't write the symbol directly
-				return i - startIndex, fmt.Errorf("could not find a backref at index %d", i)
-			}
-			best, _ := bestBackref()
-			best.writeTo(w, i)
-			i += best.length
+			// at minima, we have a backref of length 1 in the dictionary
+			bestAtI.writeTo(w, i)
+			i += bestAtI.length
 			continue
 		}
-		if !fillBackrefs(i, -1) {
+		if bestSavings < 0 {
 			// we didn't find a backref, let's write the symbol directly
 			w.TryWriteByte(d[i])
 			i++
 			continue
 		}
-		bestAtI, bestSavings := bestBackref() // todo @tabaie measure savings in bits not bytes
 
+		// for the next few bytes, we will try to find a better backref
 		if i+1 < len(d) {
-			if fillBackrefs(i+1, bestAtI.length+1) {
-				if newBest, newSavings := bestBackref(); newSavings > bestSavings {
-					// we found a better backref at i+1
-					w.TryWriteByte(d[i])
-					i++
-
-					// then mark backref to be written at i+1
-					bestSavings = newSavings
-					bestAtI = newBest
-
-					// can we find an even better backref at i+2 ?
-					if canEncodeSymbol(d[i]) && i+1 < len(d) {
-						if fillBackrefs(i+1, bestAtI.length+1) {
-							// we found an even better backref
-							if newBest, newSavings := bestBackref(); newSavings > bestSavings {
-								w.TryWriteByte(d[i])
-								i++
-
-								bestAtI = newBest
-							}
-						}
-					}
-				}
-			} else if i+2 < len(d) && canEncodeSymbol(d[i+1]) {
-				// maybe at i+2 ? (we already tried i+1)
-				if fillBackrefs(i+2, bestAtI.length+2) {
-					if newBest, newSavings := bestBackref(); newSavings > bestSavings {
-						// we found a better backref
-						// write the symbol at i
-						w.TryWriteByte(d[i])
-						i++
-						w.TryWriteByte(d[i])
-						i++
-
-						// then emit the backref at i+2
-						bestAtI = newBest
-					}
-				}
+			if _, newSavings := bestBackref(i + 1); newSavings > bestSavings+1 {
+				// we found a better backref at i+1
+				w.TryWriteByte(d[i])
+				i++
+				continue
+			}
+		}
+		if i+2 < len(d) && canEncodeSymbol(d[i+1]) {
+			// maybe at i+2 ? (we already tried i+1)
+			if _, newSavings := bestBackref(i + 2); newSavings > bestSavings+2 {
+				// we found a better backref
+				// write the symbol at i and i+1
+				w.TryWriteByte(d[i])
+				w.TryWriteByte(d[i+1])
+				i += 2
+				continue
 			}
 		}
 
@@ -312,6 +325,33 @@ func (compressor *Compressor) write(w writer, d []byte, startIndex int, inputInd
 	}
 
 	return len(d) - startIndex, nil
+}
+
+const circularBufferSize = 3
+
+type circularBuffer struct {
+	k           int
+	keys        [circularBufferSize]int
+	bestBackref [circularBufferSize]backref
+}
+
+func newCircularBuffer() *circularBuffer {
+	return &circularBuffer{keys: [circularBufferSize]int{-1, -1, -1}}
+}
+
+func (cb *circularBuffer) push(b backref, at int) {
+	cb.keys[cb.k] = at
+	cb.bestBackref[cb.k] = b
+	cb.k = (cb.k + 1) % circularBufferSize
+}
+
+func (cb *circularBuffer) best(at int) (backref, bool) {
+	for i := 0; i < circularBufferSize; i++ {
+		if cb.keys[i] == at {
+			return cb.bestBackref[i], true
+		}
+	}
+	return backref{}, false
 }
 
 func (compressor *Compressor) Reset() {
@@ -471,7 +511,7 @@ func (b *bitCounterWriter) Len() int {
 
 // canEncodeSymbol returns true if the symbol can be encoded directly
 func canEncodeSymbol(b byte) bool {
-	return b != SymbolDict && b != SymbolShort && b != SymbolLong
+	return b != SymbolDict && b != SymbolDynamic && b != SymbolShort
 }
 
 // findBackRef attempts to find a backref in the window [i-brAddressRange, i+brLengthRange]
