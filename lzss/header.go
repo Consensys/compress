@@ -16,9 +16,6 @@ const (
 type Header struct {
 	Version uint16 // compressor release version
 	Level   Level  // compression level
-	// A future version may add more fields here, so we'll have to read the
-	// version first, then read the rest of the header based on the version.
-	// Extra   []byte // "extra data", max len == math.MaxUint16
 }
 
 func (s *Header) WriteTo(w io.Writer) (int64, error) {

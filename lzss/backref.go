@@ -31,30 +31,14 @@ type BackrefType struct {
 	dictLen        int
 }
 
-func NewShortBackrefType(level Level) (short BackrefType) {
-	wordAlign := func(a int) uint8 {
-		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
-	}
-	if level == NoCompression {
-		wordAlign = func(a int) uint8 {
-			return uint8(a)
-		}
-	}
-	short = newBackRefType(SymbolShort, wordAlign(shortAddrBits), maxBackrefLenLog2, 0)
+func NewShortBackrefType() (short BackrefType) {
+	short = newBackRefType(SymbolShort, shortAddrBits, maxBackrefLenLog2, 0)
 	return
 }
 
-func NewDynamicBackrefType(dictLen, addressableBytes int, level Level) (dynamic BackrefType) {
-	wordAlign := func(a int) uint8 {
-		return (uint8(a) + uint8(level) - 1) / uint8(level) * uint8(level)
-	}
-	if level == NoCompression {
-		wordAlign = func(a int) uint8 {
-			return uint8(a)
-		}
-	}
-	bound := bits.Len(uint(addressableBytes + dictLen))
-	return newBackRefType(SymbolDynamic, wordAlign(bound), maxBackrefLenLog2, dictLen)
+func NewDynamicBackrefType(dictLen, addressableBytes int) (dynamic BackrefType) {
+	bound := uint8(bits.Len(uint(addressableBytes + dictLen)))
+	return newBackRefType(SymbolDynamic, bound, maxBackrefLenLog2, dictLen)
 }
 
 func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictLen int) BackrefType {
