@@ -26,7 +26,7 @@ func Decompress(data, dict []byte) (d []byte, err error) {
 	if header.Version != Version {
 		return nil, errors.New("unsupported compressor version")
 	}
-	if header.Level == NoCompression {
+	if header.NoCompression {
 		return data[sizeHeader:], nil
 	}
 
@@ -106,7 +106,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 	if header.Version != Version {
 		panic("unsupported compressor version")
 	}
-	if header.Level == NoCompression {
+	if header.NoCompression {
 		return CompressionPhrases{{
 			Type:              0,
 			Length:            len(c) - int(sizeHeader),

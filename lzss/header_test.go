@@ -10,8 +10,8 @@ import (
 func TestHeaderRoundTrip(t *testing.T) {
 	assert := require.New(t)
 	h := Header{
-		Version: Version,
-		Level:   BestCompression,
+		Version:       Version,
+		NoCompression: false,
 	}
 
 	var buf bytes.Buffer
