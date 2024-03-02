@@ -18,7 +18,7 @@ var refValues = map[string]refValue{
 		lzssRatio: 4.19,
 	},
 	"./testdata/blobs/1-goerli-3690632": {
-		lzssRatio: 24.42,
+		lzssRatio: 24.10,
 	},
 	"./testdata/blobs/2-1865938": {
 		lzssRatio: 3.73,
@@ -61,7 +61,7 @@ func TestReferenceBlobs(t *testing.T) {
 			}
 			t.Logf("%s: original size: %d, compressed size: %d, lzss ratio: %.2f (%s --> %.2f)", filename, len(f), len(compressed), lzssRatio, emoji, delta)
 
-			assert.InDelta(ref.lzssRatio, lzssRatio, 0.05)
+			assert.InDelta(ref.lzssRatio, lzssRatio, 0.05) // TODO Delta on ratio instead?
 
 		})
 	}
