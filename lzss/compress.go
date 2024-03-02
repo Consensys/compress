@@ -459,7 +459,7 @@ func findBackRef(data []byte, i int, bType BackrefType, minLength int, dataIndex
 
 	if length < maxLength && bType.Delimiter == SymbolDynamic {
 		// we also check the dictionary and check if it's a better backref
-		// we look for data[i:i+maxLength) in the dict[0:dictLen)
+		// we look for data[i:i+maxLength) in the dict[0:DictLen)
 		dAddr, dLength := dictIndex.LookupLongest(data[i:i+maxLength], minLength, maxLength, 0, dictLen)
 		if dLength > length {
 			addr, length = dAddr, dLength

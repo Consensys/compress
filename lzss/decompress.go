@@ -127,6 +127,9 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 
 	var out bytes.Buffer
 	out.Grow(len(c) * 7)
+	if _, err = out.Write(dict); err != nil {
+		return nil, err
+	}
 
 	// the decompressor considers the direct copying of each byte of the input its own event.
 	// that's inconvenient to the human eye, so we group all consecutive literal copies into the same event
@@ -182,7 +185,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		case SymbolDynamic:
 			emitLiteralIfNecessary()
 			// long back ref
-			bDynamic := backref{bType: NewDynamicBackrefType(len(dict), out.Len())}
+			bDynamic := backref{bType: NewDynamicBackrefType(0, out.Len())}
 			if err := bDynamic.readFrom(in); err != nil {
 				return nil, err
 			}
@@ -198,6 +201,7 @@ func CompressedStreamInfo(c, dict []byte) (CompressionPhrases, error) {
 		}
 		s = in.TryReadByte()
 	}
+	emitLiteralIfNecessary()
 	return res, nil
 }
 

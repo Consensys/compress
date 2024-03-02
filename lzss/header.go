@@ -20,7 +20,7 @@ type Header struct {
 }
 
 func (s *Header) WriteTo(w io.Writer) (int64, error) {
-	if err := binary.Write(w, binary.LittleEndian, uint16(s.Version)); err != nil {
+	if err := binary.Write(w, binary.BigEndian, uint16(s.Version)); err != nil {
 		return 0, err
 	}
 
@@ -38,7 +38,7 @@ func (s *Header) ReadFrom(r io.Reader) (int64, error) {
 		return int64(n), err
 	}
 
-	s.Version = binary.LittleEndian.Uint16(b[:2])
+	s.Version = binary.BigEndian.Uint16(b[:2])
 	s.NoCompression, err = indInv(b[2])
 	return int64(n), err
 }
