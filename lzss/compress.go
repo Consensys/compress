@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/consensys/compress"
-
 	"github.com/consensys/compress/lzss/internal/suffixarray"
 	"github.com/icza/bitio"
 )
@@ -21,7 +19,6 @@ type Compressor struct {
 	lastOutLen        int
 	lastNbSkippedBits uint8
 	lastInLen         int
-	justBypassed      bool
 
 	inputIndex *suffixarray.Index
 	inputSa    [MaxInputSize]int32 // suffix array space.
@@ -31,16 +28,8 @@ type Compressor struct {
 	dictSa          [MaxDictSize]int32 // suffix array space.
 	dictReservedIdx map[byte]int       // stores the index of the reserved symbols in the dictionary
 
-	level         Level
-	intendedLevel Level
+	noCompression bool
 }
-
-type Level uint8
-
-const (
-	NoCompression   Level = 0
-	BestCompression Level = 1
-)
 
 // NewCompressor returns a new compressor with the given dictionary
 // The dictionary is an unstructured sequence of substrings that are expected to occur frequently in the data. It is not included in the compressed data and should thus be a-priori known to both the compressor and the decompressor.
@@ -72,7 +61,6 @@ func NewCompressor(dict []byte) (*Compressor, error) {
 	c.outBuf.Grow(MaxInputSize)
 	c.inBuf.Grow(1 << 19)
 	c.bw = bitio.NewWriter(&c.outBuf)
-	c.intendedLevel = BestCompression
 	c.dictIndex = suffixarray.New(c.dictData, c.dictSa[:len(c.dictData)])
 	c.Reset()
 	return c, nil
@@ -112,13 +100,12 @@ func (compressor *Compressor) Write(d []byte) (n int, err error) {
 	}
 
 	compressor.lastNbSkippedBits = compressor.nbSkippedBits
-	compressor.justBypassed = false
 	if err = compressor.appendInput(d); err != nil {
 		return
 	}
 
 	// write uncompressed data if compression is disabled
-	if compressor.level == NoCompression {
+	if compressor.noCompression {
 		compressor.outBuf.Write(d)
 		return len(d), nil
 	}
@@ -300,11 +287,11 @@ func (cb *circularBuffer) best(at int) (backref, bool) {
 }
 
 func (compressor *Compressor) Reset() {
-	compressor.level = compressor.intendedLevel
+	compressor.noCompression = false
 	compressor.outBuf.Reset()
 	header := Header{
-		Version: Version,
-		Level:   compressor.level,
+		Version:       Version,
+		NoCompression: compressor.noCompression,
 	}
 	if _, err := header.WriteTo(&compressor.outBuf); err != nil {
 		panic(err)
@@ -312,7 +299,6 @@ func (compressor *Compressor) Reset() {
 	compressor.inBuf.Reset()
 	compressor.lastOutLen = compressor.outBuf.Len()
 	compressor.lastNbSkippedBits = 0
-	compressor.justBypassed = false
 	compressor.nbSkippedBits = 0
 	compressor.lastInLen = 0
 }
@@ -343,11 +329,14 @@ func (compressor *Compressor) Revert() error {
 	compressor.inBuf.Truncate(compressor.lastInLen)
 	compressor.lastInLen = -1
 
-	if compressor.justBypassed {
+	if compressor.noCompression {
 		in := compressor.inBuf.Bytes()
 		compressor.Reset()
-		_, err := compressor.Write(in) // recompress everything. inefficient but 1) gets a better compression ratio and 2) this is not a common case
-		return err
+		if _, err := compressor.Write(in); err != nil { // recompress everything. inefficient but 1) gets a better compression ratio and 2) this is not a common case
+			return err
+		}
+		compressor.ConsiderBypassing()
+		return nil
 	} else {
 		compressor.outBuf.Truncate(compressor.lastOutLen)
 		compressor.nbSkippedBits = compressor.lastNbSkippedBits
@@ -360,13 +349,12 @@ func (compressor *Compressor) ConsiderBypassing() (bypassed bool) {
 
 	if compressor.outBuf.Len() > compressor.inBuf.Len()+HeaderSize {
 		// compression was not worth it
-		compressor.level = NoCompression
+		compressor.noCompression = true
 		compressor.nbSkippedBits = 0
 		compressor.lastOutLen = compressor.lastInLen + HeaderSize
 		compressor.lastNbSkippedBits = 0
-		compressor.justBypassed = true
 		compressor.outBuf.Reset()
-		header := Header{Version: Version, Level: NoCompression}
+		header := Header{Version: Version, NoCompression: compressor.noCompression}
 		if _, err := header.WriteTo(&compressor.outBuf); err != nil {
 			panic(err)
 		}
@@ -383,24 +371,6 @@ func (compressor *Compressor) Bytes() []byte {
 	return compressor.outBuf.Bytes()
 }
 
-// Stream returns a stream of the compressed data
-func (compressor *Compressor) Stream() compress.Stream {
-	wordNbBits := uint8(compressor.level)
-	if wordNbBits == 0 {
-		wordNbBits = 8
-	}
-
-	res, err := compress.NewStream(compressor.outBuf.Bytes(), wordNbBits)
-	if err != nil {
-		panic(err)
-	}
-
-	return compress.Stream{
-		D:       res.D[:(res.Len()-int(compressor.lastNbSkippedBits))/int(wordNbBits)],
-		NbSymbs: res.NbSymbs,
-	}
-}
-
 // Compress compresses the given data and returns the compressed data
 func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 	compressor.Reset()
@@ -413,7 +383,7 @@ func (compressor *Compressor) Compress(d []byte) (c []byte, err error) {
 // Max size of d is 256kB
 func (compressor *Compressor) CompressedSize256k(d []byte) (size int, err error) {
 	size = HeaderSize
-	if compressor.level == NoCompression {
+	if compressor.noCompression {
 		size += len(d)
 		return
 	}
@@ -489,7 +459,7 @@ func findBackRef(data []byte, i int, bType BackrefType, minLength int, dataIndex
 
 	if length < maxLength && bType.Delimiter == SymbolDynamic {
 		// we also check the dictionary and check if it's a better backref
-		// we look for data[i:i+maxLength) in the dict[0:dictLen)
+		// we look for data[i:i+maxLength) in the dict[0:DictLen)
 		dAddr, dLength := dictIndex.LookupLongest(data[i:i+maxLength], minLength, maxLength, 0, dictLen)
 		if dLength > length {
 			addr, length = dAddr, dLength
@@ -506,4 +476,11 @@ func (compressor *Compressor) appendInput(d []byte) error {
 	compressor.lastInLen = compressor.inBuf.Len()
 	compressor.inBuf.Write(d)
 	return nil
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

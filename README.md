@@ -15,7 +15,7 @@ The `Compressor` class in the `lzss` package does all the work.
 ## Example
 ```go
 d := []byte("hello world, hello wordl")
-compressor, _ := lzss.NewCompressor(nil, lzss.BestCompression)
+compressor, _ := lzss.NewCompressor(nil)
 c, _ := compressor.Compress(d)
 dBack, _ := Decompress(c, nil)
 if !bytes.Equal(d, dBack) {
@@ -32,40 +32,32 @@ Non-enumerated numbers encoded in `n` bits represent values from `1` to `2ⁿ`, 
 ### Compressed file format
 The compressed output is structured as follows:
 ```
-              0   1   2   3...
-            +---+---+---+===============+
-            |  VSN  | L |... PHRASES ...|
-            +---+---+---+===============+
+              0   1    2    3...
+            +---+---+-----+===============+
+            |  VSN  | NOC |... PHRASES ...|
+            +---+---+-----+===============+
 ```
-* `VSN` is a 16-bit version number, currently `0x0000`.
-* `L` is an 8-bit number representing the "compression level". A value of `0x00` indicates no compression at all, whereby `PHRASES` will consist of a literal copy of the data. Other acceptable values for `L` are 1, 2, 4, or 8. Concretely, this value indicates the size (in bits) of a compressed word. Words are a SNARK-side consideration, and the larger they are, the fewer constraints the decompressor would have, at some cost to the compression ratio.
+* `VSN` is a 16-bit version number, currently `0x0100`.
+* `NOC` is a byte-represented boolean number indicating if compression has been bypassed entirely. `0x01` indicates no compression at all, whereby `PHRASES` will consist of a literal copy of the data. The only other acceptable value is `0x00`.
 * A compressor `PHRASE` is one of the following:
-  - A byte, less than 253, to be interpreted as a literal.
-  - A long back-reference: (Note: from here-on data are represented with bit-level precision)
+  - A byte, less than 254, to be interpreted as a literal.
+  - A fixed-length back-reference: (Note: from here-on data are represented with bit-level precision)
     ```
-              0..7  8..15   16..16+NBBITS_LONG_OFS
+              0..7  8..15       16..30
+            +------+------+----------------+
+            | 0xFE | LEN  |     OFFSET     |
+            +------+------+----------------+
+    ```
+  - A dynamic-length back-reference:
+    ```
+              0..7  8..15   16..16+NBBITS_DYN_OFS
             +------+------+------------------------+
             | 0xFD | LEN  |        OFFSET          |
             +------+------+------------------------+
     ```
-    , where `NBBITS_LONG_OFS = ⌈19/L⌉ * L`
-  - A short back-reference:
-    ```
-              0..7  8..15   16..16+NBBITS_SHORT_OFS
-            +------+------+------------------------+
-            | 0xFE | LEN  |        OFFSET          |
-            +------+------+------------------------+
-    ```
-    , where `NBBITS_SHORT_OFS = ⌈14/L⌉ * L`
-  - A dictionary reference:
-    ```
-            0..7  8..15   16..16+NBBITS_DICT_ADDR
-          +------+------+------------------------+
-          | 0xFF | LEN  |         ADDR           |
-          +------+------+------------------------+
-    ```
-    , where `NBBITS_DICT_ADDR = ⌈log₂(DICT_SIZE)/L⌉ * L`, and `DICT_SIZE` is the size of the dictionary in bytes.
-### Interpreting "references"
-A back-reference is an imperative to copy from already decompressed data. The "offset" field indicates how far back in the decompressed data to copy from, and the "length" field indicates how many bytes to copy. A back-reference may overlap with its own output, to create so-called "run length encodings", where many copies of the same byte are represented by a single back-reference.
+    , where `NBBITS_DYN_OFS = ⌈log₂(N+DICT_SIZE)⌉`. The value `N` is the size in bytes of the output stream at the time the back-reference is being read, and `DICT_SIZE` is the size of the dictionary in bytes.
 
-The "address" field in a dictionary reference indicates where in the dictionary to copy from. In accordance with the number encoding rules above, the bytes in the dictionary are indexed starting at 1. The dictionary is an unstructured, user-provided stream of bytes that domain knowledge suggests are likely to occur in the data. It can improve the compression ratio, especially for small data. The dictionary is not part of the compressed data, and is not transmitted. Users are responsible for ensuring that the same dictionary is used by both the compressor and the decompressor. Since the special characters `0xFD`, `0xFE`, and `0xFF` cannot be represented by any other means than a dictionary reference, the compressor and decompressor will add them to the dictionary before using it, if they are not already present. This may affect the values `DICT_SIZE` and `NBBITS_DICT_ADDR`.
+### Interpreting back-references
+A **back-reference** is an imperative to copy from already decompressed data. The "offset" field indicates how far back in the decompressed data to copy from, and the "length" field indicates how many bytes to copy. A back-reference may overlap with its own output, to create so-called "run length encodings", where many copies of the same byte are represented by a single back-reference. Whenever the computed index `i` of a byte to copy turns out negative, it is interpreted as the byte at index `DICT_SIZE + i` in the dictionary.
+
+The **dictionary** is an unstructured, user-provided stream of bytes that domain knowledge suggests are likely to occur in the data. It can improve the compression ratio, especially for small data. The dictionary is not part of the compressed data, and is not transmitted. Users are responsible for ensuring that the same dictionary is used by both the compressor and the decompressor. Since the special characters `0xFE` and `0xFF` cannot be represented by any other means than a dictionary reference, the compressor and decompressor will add them to the dictionary before using it, if they are not already present. This may affect the value `DICT_SIZE` and consequently `NBBITS_DYN_OFS`.

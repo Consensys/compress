@@ -2,10 +2,8 @@ package lzss
 
 import (
 	"fmt"
-	"math"
-	"math/bits"
-
 	"github.com/icza/bitio"
+	"math"
 )
 
 const (
@@ -28,7 +26,7 @@ type BackrefType struct {
 	nbBytesBackRef int
 	maxAddress     int
 	maxLength      int
-	dictLen        int
+	DictLen        int
 }
 
 func NewShortBackrefType() (short BackrefType) {
@@ -37,7 +35,7 @@ func NewShortBackrefType() (short BackrefType) {
 }
 
 func NewDynamicBackrefType(dictLen, addressableBytes int) (dynamic BackrefType) {
-	bound := uint8(bits.Len(uint(addressableBytes + dictLen)))
+	bound := uint8(20)
 	return newBackRefType(SymbolDynamic, bound, maxBackrefLenLog2, dictLen)
 }
 
@@ -50,7 +48,7 @@ func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictLen int)
 		nbBytesBackRef: int(8+nbBitsAddress+nbBitsLength+7) / 8,
 		maxAddress:     1 << nbBitsAddress,
 		maxLength:      1 << nbBitsLength,
-		dictLen:        dictLen,
+		DictLen:        dictLen,
 	}
 }
 
@@ -65,7 +63,7 @@ type backref struct {
 func (b *backref) writeTo(w writer, i int) {
 	w.TryWriteByte(b.bType.Delimiter)
 	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
-	addrToWrite := (i + b.bType.dictLen) - b.address - 1
+	addrToWrite := (i + b.bType.DictLen) - b.address - 1
 	w.TryWriteBits(uint64(addrToWrite), b.bType.NbBitsAddress)
 }
 
