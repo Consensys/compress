@@ -35,7 +35,7 @@ func NewShortBackrefType() (short BackrefType) {
 }
 
 func NewDynamicBackrefType(dictLen, addressableBytes int) (dynamic BackrefType) {
-	bound := uint8(20)
+	bound := uint8(21)
 	return newBackRefType(SymbolDynamic, bound, maxBackrefLenLog2, dictLen)
 }
 
