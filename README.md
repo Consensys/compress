@@ -41,21 +41,20 @@ The compressed output is structured as follows:
 * `NOC` is a byte-represented boolean number indicating if compression has been bypassed entirely. `0x01` indicates no compression at all, whereby `PHRASES` will consist of a literal copy of the data. The only other acceptable value is `0x00`.
 * A compressor `PHRASE` is one of the following:
   - A byte, less than 254, to be interpreted as a literal.
-  - A fixed-length back-reference: (Note: from here-on data are represented with bit-level precision)
+  - A short back-reference: (Note: from here-on data are represented with bit-level precision)
     ```
-              0..7  8..15       16..30
+              0..7  8..15       16..29
             +------+------+----------------+
             | 0xFE | LEN  |     OFFSET     |
             +------+------+----------------+
     ```
-  - A dynamic-length back-reference:
+  - A long back-reference:
     ```
-              0..7  8..15   16..16+NBBITS_DYN_OFS
-            +------+------+------------------------+
-            | 0xFD | LEN  |        OFFSET          |
-            +------+------+------------------------+
+              0..7  8..15    16..36
+            +------+------+----------+
+            | 0xFD | LEN  |  OFFSET  |
+            +------+------+----------+
     ```
-    , where `NBBITS_DYN_OFS = ⌈log₂(N+DICT_SIZE)⌉`. The value `N` is the size in bytes of the output stream at the time the back-reference is being read, and `DICT_SIZE` is the size of the dictionary in bytes.
 
 ### Interpreting back-references
 A **back-reference** is an imperative to copy from already decompressed data. The "offset" field indicates how far back in the decompressed data to copy from, and the "length" field indicates how many bytes to copy. A back-reference may overlap with its own output, to create so-called "run length encodings", where many copies of the same byte are represented by a single back-reference. Whenever the computed index `i` of a byte to copy turns out negative, it is interpreted as the byte at index `DICT_SIZE + i` in the dictionary.

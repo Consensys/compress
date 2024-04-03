@@ -1,6 +1,6 @@
 module github.com/consensys/compress
 
-go 1.20
+go 1.21
 
 require (
 	github.com/icza/bitio v1.1.0
