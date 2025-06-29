@@ -588,9 +588,21 @@ func BenchmarkCompressedSize(b *testing.B) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+func TestAverageBatchOptimal(t *testing.T) {
+	assert := require.New(t)
+
+	// read "average_block.hex" file
+	d, err := os.ReadFile("./testdata/average_block.hex")
+	assert.NoError(err)
+
+	// convert to bytes
+	data, err := hex.DecodeString(string(d))
+	assert.NoError(err)
+
+	dict := getDictionary()
+
+	c, err := CompressOptimal(data, dict)
+	require.NoError(t, err)
+
+	fmt.Println("optimal lzss compression ratio:", len(data)/len(c))
 }

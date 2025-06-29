@@ -2,8 +2,9 @@ package lzss
 
 import (
 	"fmt"
-	"github.com/icza/bitio"
 	"math"
+
+	"github.com/icza/bitio"
 )
 
 const (
@@ -53,13 +54,15 @@ func newBackRefType(symbol byte, nbBitsAddress, nbBitsLength uint8, dictLen int)
 }
 
 type backref struct {
-	address int
+	address int	// address to the backref's reference, in the decompressed stream prepended by the dictionary. i.e. address to the first byte of the uncompressed stream is len(dict)
 	length  int
 	bType   BackrefType
 }
 
 // Warning; writeTo and readFrom are not symmetrical
 
+// writeTo
+// - i is the current index (uncompressed stream starts at 0)
 func (b *backref) writeTo(w writer, i int) {
 	w.TryWriteByte(b.bType.Delimiter)
 	w.TryWriteBits(uint64(b.length-1), b.bType.NbBitsLength)
