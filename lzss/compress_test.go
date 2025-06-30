@@ -601,7 +601,7 @@ func TestAverageBatchOptimal(t *testing.T) {
 
 	dict := getDictionary()
 
-	c, err := CompressOptimal(data, dict)
+	c, err := CompressOptimalParallel(data, dict)
 	require.NoError(t, err)
 
 	fmt.Println("optimal lzss compression ratio:", len(data)/len(c))
