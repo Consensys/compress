@@ -15,7 +15,7 @@ type node struct {
 	frequency int   // frequency of the symbol
 	left      *node // left child
 	right     *node // right child
-	depth     int   // depth from treeRoot root
+	depth     int   // depth from tree root
 }
 
 // PriorityQueue implements a min-heap for Nodes.
@@ -75,6 +75,9 @@ type symbolCode struct {
 
 // Code represents a prefix code.
 type Code []symbolCode
+
+func (c *Code) NbSymbols() int { return len(*c) }
+
 type Encoder struct {
 	w *bitio.Writer
 	c *Code
@@ -100,6 +103,14 @@ func (c *Code) WriteTo(w io.Writer) (n int64, err error) {
 func (c *Code) ReadFrom(r io.Reader) (n int64, err error) {
 	//TODO implement me
 	panic("implement me")
+}
+
+func NewCodeFromText(text []int, nbSymbols int) *Code {
+	frequencies := make([]int, nbSymbols)
+	for _, t := range text {
+		frequencies[t]++
+	}
+	return NewCodeFromSymbolFrequencies(frequencies)
 }
 
 // NewCodeFromSymbolFrequencies builds an encoder based on the given symbol frequencies.
@@ -219,15 +230,15 @@ func NewDecoder(c *Code, r *bitio.Reader) *Decoder {
 			curBit := (sc.encoding >> (sc.length - 1 - i)) & 1
 			if parent.left == nil || parent.right == nil {
 				if parent.left != nil || parent.right != nil {
-					panic("bad treeRoot") // will never happen
+					panic("bad tree") // will never happen
 				}
 				parent.left = &node{symbol: -1}
 				parent.right = &node{symbol: -1}
-				if curBit == 0 {
-					parent = parent.left
-				} else {
-					parent = parent.right
-				}
+			}
+			if curBit == 0 {
+				parent = parent.left
+			} else {
+				parent = parent.right
 			}
 		}
 		if parent.left != nil || parent.right != nil {
