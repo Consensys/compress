@@ -477,10 +477,3 @@ func (compressor *Compressor) appendInput(d []byte) error {
 	compressor.inBuf.Write(d)
 	return nil
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
