@@ -97,6 +97,6 @@ func main() {
 
 	if *flagReport {
 		ratioPct := lenC * 100 / lenD
-		fmt.Printf("%dB -> %dB compression ratio %d.%2d\n", lenC, lenD, ratioPct/100, ratioPct%100)
+		fmt.Printf("%dB -> %dB compression ratio %d.%02d\n", lenC, lenD, ratioPct/100, ratioPct%100)
 	}
 }
