@@ -67,13 +67,13 @@ func main() {
 
 	if *flagOut == "" { // construct a file name from the input name
 		if *flagDecompress {
-			*flagOut = *flagIn + extension
-		} else {
 			if strings.HasSuffix(*flagIn, extension) {
 				*flagOut = (*flagIn)[:len(*flagIn)-len(extension)]
 			} else {
 				*flagOut = *flagIn + ".decompressed"
 			}
+		} else {
+			*flagOut = *flagIn + extension
 		}
 	}
 
